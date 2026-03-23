@@ -1,0 +1,8 @@
+.venv/
+.claude/
+__pycache__/
+*.pyc
+.env
+pave_mock.db
+eval/results/
+.DS_Store
