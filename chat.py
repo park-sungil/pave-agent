@@ -5,9 +5,29 @@ import uuid
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command
+from rich.console import Console
+from rich.markdown import Markdown
+from rich.panel import Panel
+from rich.table import Table
+from rich.theme import Theme
+from rich import box
 
 from graph import build_graph
 import shared.pdk_cache as pdk_cache
+
+
+_THEME = Theme({
+    "node":    "bold cyan",
+    "key":     "dim cyan",
+    "val":     "white",
+    "error":   "bold red",
+    "warn":    "yellow",
+    "prompt":  "bold green",
+    "header":  "bold magenta",
+    "default": "dim yellow",
+    "info":    "dim white",
+})
+console = Console(theme=_THEME, highlight=False)
 
 
 # 노드별 출력할 state 키 및 포맷 정의
@@ -97,18 +117,37 @@ def _fmt_value(key: str, val) -> str:
 def _print_node_debug(chunk: dict) -> None:
     """stream chunk(노드 업데이트) 디버그 출력"""
     for node_name, node_output in chunk.items():
-        print(f"\n  ┌─[NODE] {node_name}")
+        lines = []
         if not isinstance(node_output, dict):
-            print(f"  │  {node_output}")
+            lines.append(str(node_output))
         else:
             keys = _NODE_DEBUG_KEYS.get(node_name, list(node_output.keys()))
             for key in keys:
                 if key in node_output:
-                    print(f"  │  {key}: {_fmt_value(key, node_output[key])}")
-            # error가 있으면 항상 표시
+                    lines.append(f"[key]{key}:[/key] [val]{_fmt_value(key, node_output[key])}[/val]")
             if "error" in node_output and node_output["error"]:
-                print(f"  │  error: {node_output['error']}")
-        print(f"  └{'─' * 40}")
+                lines.append(f"[error]error: {node_output['error']}[/error]")
+        console.print(Panel(
+            "\n".join(lines) if lines else "(출력 없음)",
+            title=f"[node]{node_name}[/node]",
+            border_style="cyan",
+            expand=False,
+        ))
+
+
+def _print_data_table(dt: dict) -> None:
+    """data_tables 항목을 rich Table로 렌더링"""
+    headers = dt.get("headers", [])
+    rows = dt.get("rows", [])
+    title = dt.get("title", "")
+    if not headers or not rows:
+        return
+    table = Table(title=title, box=box.SIMPLE_HEAVY, header_style="bold magenta", show_lines=False)
+    for h in headers:
+        table.add_column(h, overflow="fold")
+    for row in rows:
+        table.add_row(*[str(c) for c in row])
+    console.print(table)
 
 
 def _stream_run(graph, state_or_cmd, config, debug: bool) -> None:
@@ -119,9 +158,8 @@ def _stream_run(graph, state_or_cmd, config, debug: bool) -> None:
 
 
 def _safe_input(prompt: str) -> str:
-    """인코딩 무관하게 한국어 입력을 안전하게 읽기 (UTF-8 → CP949 → EUC-KR 순 시도)"""
-    sys.stdout.write(prompt)
-    sys.stdout.flush()
+    """인코딩 무관하게 한국어 입력을 안전하게 읽기"""
+    console.print(f"[prompt]{prompt}[/prompt]", end="")
     if hasattr(sys.stdin, "buffer"):
         raw = sys.stdin.buffer.readline()
         if not raw:
@@ -148,10 +186,10 @@ def main():
 
     debug = "--debug" in sys.argv
 
-    print("=== pave-agent v8 CLI ===")
+    console.rule("[header]pave-agent v8 CLI[/header]")
     if debug:
-        print("[DEBUG MODE] 노드 흐름 출력 활성화")
-    print("종료: quit / exit\n")
+        console.print("[warn][DEBUG MODE] 노드 흐름 출력 활성화[/warn]")
+    console.print("[info]종료: quit / exit[/info]\n")
 
     pdk_cache.load()
     graph = build_graph(checkpointer=MemorySaver())
@@ -164,11 +202,11 @@ def main():
         try:
             question = _safe_input("질문> ").strip()
         except (EOFError, KeyboardInterrupt):
-            print("\n종료합니다.")
+            console.print("\n[info]종료합니다.[/info]")
             break
 
         if not question or question.lower() in ("quit", "exit"):
-            print("종료합니다.")
+            console.print("[info]종료합니다.[/info]")
             break
 
         thread_counter += 1
@@ -198,15 +236,14 @@ def main():
                             val = intr.value
                             q = val.get("question", str(val))
                             options = val.get("options", [])
-                            print(f"\n[질문] {q}")
-                            if options:
-                                for i, opt in enumerate(options, 1):
-                                    print(f"  {i}. {opt}")
+                            opts_text = "\n".join(f"  {i}. {o}" for i, o in enumerate(options, 1))
+                            body = q + (f"\n{opts_text}" if opts_text else "")
+                            console.print(Panel(body, title="[warn]질문[/warn]", border_style="yellow"))
 
                 try:
                     answer = _safe_input("응답> ").strip()
                 except (EOFError, KeyboardInterrupt):
-                    print("\n취소합니다.")
+                    console.print("\n[info]취소합니다.[/info]")
                     break
 
                 if not answer:
@@ -216,26 +253,31 @@ def main():
 
             # 최종 결과 출력
             final = graph.get_state(config).values
+            console.rule()
             if final.get("error"):
-                print(f"\n[ERROR] {final['error']}\n")
+                console.print(Panel(final["error"], title="[error]ERROR[/error]", border_style="red"))
             elif final.get("final_response"):
                 resp = final["final_response"]
-                print(f"\n{resp['text']}")
+                # 본문 마크다운 렌더링
+                console.print(Markdown(resp["text"]))
+                # data_tables (text에 없는 경우 대비)
+                for dt in resp.get("data_tables") or []:
+                    _print_data_table(dt)
+                # 적용 기본값
                 if resp.get("applied_defaults"):
-                    defaults = ", ".join(
-                        f"{k}={v}" for k, v in resp["applied_defaults"].items()
-                    )
-                    print(f"\n[적용 기본값] {defaults}")
+                    defaults = ", ".join(f"{k}={v}" for k, v in resp["applied_defaults"].items())
+                    console.print(f"[default]적용 기본값: {defaults}[/default]")
+                # 차트
                 if resp.get("charts"):
-                    print(f"[차트] {len(resp['charts'])}개 생성")
-                print()
+                    console.print(f"[info]차트 {len(resp['charts'])}개 생성됨[/info]")
             else:
-                print("\n[응답 없음]\n")
+                console.print("[warn]응답 없음[/warn]")
+            console.rule()
 
             history.append({"question": question, "summary": "..."})
 
         except Exception as e:
-            print(f"\n[EXCEPTION] {type(e).__name__}: {e}\n")
+            console.print(Panel(f"{type(e).__name__}: {e}", title="[error]EXCEPTION[/error]", border_style="red"))
 
 
 if __name__ == "__main__":
