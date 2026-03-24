@@ -17,15 +17,15 @@ import shared.pdk_cache as pdk_cache
 
 
 _THEME = Theme({
-    "node":    "bold cyan",
-    "key":     "dim cyan",
+    "node":    "bold bright_cyan",
+    "key":     "bright_blue",
     "val":     "white",
-    "error":   "bold red",
-    "warn":    "yellow",
-    "prompt":  "bold green",
-    "header":  "bold magenta",
-    "default": "dim yellow",
-    "info":    "dim white",
+    "error":   "bold bright_red",
+    "warn":    "bold yellow",
+    "prompt":  "bold bright_green",
+    "header":  "bold bright_magenta",
+    "default": "bright_yellow",
+    "info":    "bright_black",
 })
 console = Console(theme=_THEME, highlight=False)
 

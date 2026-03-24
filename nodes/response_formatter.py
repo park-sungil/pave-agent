@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections import defaultdict
 
 from langchain_core.messages import SystemMessage, HumanMessage
@@ -78,9 +79,18 @@ def _format_list(state: PaveAgentState) -> FinalResponse:
     sep_line = "| " + " | ".join("---" for _ in headers) + " |"
 
     lines = [f"총 {len(rows)}개 버전이 등록되어 있습니다.\n"]
-    table_rows = []
 
-    for process in sorted(by_process.keys()):
+    # latest → oldest 정렬:
+    #   - 숫자 오름차순 (작은 노드 번호 = 최신 공정)
+    #   - suffix 내림차순 (파생 suffix가 많을수록 최신)
+    #   예: SF2PP(2,-2) → SF2P(2,-1) → SF2(2,0) → SF3(3,0)
+    def _process_sort_key(p: str) -> tuple:
+        m = re.match(r'^([A-Za-z]+)(\d+)([A-Za-z]*)$', p)
+        if m:
+            return (int(m.group(2)), -len(m.group(3)))
+        return (999, 0)
+
+    for process in sorted(by_process.keys(), key=_process_sort_key):
         entries = by_process[process]
         lines.append(f"### {process}")
         lines.append(header_line)
@@ -96,18 +106,12 @@ def _format_list(state: PaveAgentState) -> FinalResponse:
                 e.get("PEX", ""),
             ]
             lines.append("| " + " | ".join(cols) + " |")
-            table_rows.append([process] + cols)
         lines.append("")
 
     text = "\n".join(lines).strip()
-    data_table = {
-        "title": "가용 PDK 목록",
-        "headers": ["PROCESS", "PROJECT", "PROJECT_NAME", "MASK", "DK_GDS", "HSPICE", "LVS", "PEX"],
-        "rows": table_rows,
-    }
     return FinalResponse(
         text=text,
-        data_tables=[data_table],
+        data_tables=[],
         charts=[],
         applied_defaults={},
         metadata={},
