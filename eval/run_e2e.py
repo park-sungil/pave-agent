@@ -25,6 +25,7 @@ from nodes.interpreter import interpreter
 from nodes.visualizer import visualizer
 from nodes.response_formatter import response_formatter
 from nodes.fallback_agent import fallback_agent
+from nodes.pdk_lister import pdk_lister
 
 RESULTS_DIR = Path(__file__).parent / "results"
 
@@ -93,6 +94,22 @@ E2E_CASES = [
             "route": "fallback",
         },
     },
+    {
+        "id": "E2E-08",
+        "question": "DB에 어떤 PDK가 있어?",
+        "checks": {
+            "has_response": True,
+            "route": "list",
+        },
+    },
+    {
+        "id": "E2E-09",
+        "question": "SF3 버전 목록 보여줘",
+        "checks": {
+            "has_response": True,
+            "route": "list",
+        },
+    },
 ]
 
 
@@ -110,10 +127,12 @@ def _build_graph():
     builder.add_node("visualizer", visualizer)
     builder.add_node("response_formatter", response_formatter)
     builder.add_node("fallback_agent", fallback_agent)
+    builder.add_node("pdk_lister", pdk_lister)
 
     builder.add_edge(START, "intent_parser")
     builder.add_conditional_edges("intent_parser", _route, {
         "distributed": "pdk_resolver",
+        "list": "pdk_lister",
         "fallback": "fallback_agent",
     })
     builder.add_edge("pdk_resolver", "query_builder")
@@ -122,6 +141,7 @@ def _build_graph():
     builder.add_edge("analyzer", "interpreter")
     builder.add_edge("interpreter", "visualizer")
     builder.add_edge("fallback_agent", "visualizer")
+    builder.add_edge("pdk_lister", "visualizer")
     builder.add_edge("visualizer", "response_formatter")
     builder.add_edge("response_formatter", END)
 

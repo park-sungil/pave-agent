@@ -4,8 +4,13 @@
     "question": "SF3 대비 SF2 성능 비교해줘",
     "expected": {
       "intent": "analyze",
-      "processes": ["SF3", "SF2"],
-      "metrics_contains": ["freq_ghz"],
+      "processes": [
+        "SF3",
+        "SF2"
+      ],
+      "metrics_contains": [
+        "freq_ghz"
+      ],
       "hint": null
     }
   },
@@ -14,9 +19,16 @@
     "question": "LVT랑 RVT 차이 얼마나 돼?",
     "expected": {
       "intent": "analyze",
-      "vths": ["LVT", "RVT"],
-      "metrics_contains": ["freq_ghz"],
-      "missing_contains": ["process"],
+      "vths": [
+        "LVT",
+        "RVT"
+      ],
+      "metrics_contains": [
+        "freq_ghz"
+      ],
+      "missing_contains": [
+        "process"
+      ],
       "hint": null
     }
   },
@@ -25,7 +37,9 @@
     "question": "이상치 찾아줘",
     "expected": {
       "intent": "anomaly",
-      "missing_contains": ["process"]
+      "missing_contains": [
+        "process"
+      ]
     }
   },
   {
@@ -33,8 +47,12 @@
     "question": "최근 3개 버전 성능 추이 보여줘",
     "expected": {
       "intent": "trend",
-      "metrics_contains": ["freq_ghz"],
-      "missing_contains": ["process"]
+      "metrics_contains": [
+        "freq_ghz"
+      ],
+      "missing_contains": [
+        "process"
+      ]
     }
   },
   {
@@ -42,8 +60,12 @@
     "question": "온도 올리면 leakage 얼마나 변해?",
     "expected": {
       "intent": "analyze",
-      "metrics_contains": ["s_power"],
-      "missing_contains": ["process"],
+      "metrics_contains": [
+        "s_power"
+      ],
+      "missing_contains": [
+        "process"
+      ],
       "hint": "sensitivity"
     }
   },
@@ -52,10 +74,18 @@
     "question": "INV D1 LVT 데이터 보여줘",
     "expected": {
       "intent": "analyze",
-      "cells": ["INV"],
-      "drive_strengths": ["D1"],
-      "vths": ["LVT"],
-      "missing_contains": ["process"],
+      "cells": [
+        "INV"
+      ],
+      "drive_strengths": [
+        "D1"
+      ],
+      "vths": [
+        "LVT"
+      ],
+      "missing_contains": [
+        "process"
+      ],
       "hint": "profile"
     }
   },
@@ -64,8 +94,12 @@
     "question": "low power에 어떤 Vth가 좋을까?",
     "expected": {
       "intent": "analyze",
-      "metrics_contains": ["s_power"],
-      "missing_contains": ["process"],
+      "metrics_contains": [
+        "s_power"
+      ],
+      "missing_contains": [
+        "process"
+      ],
       "hint": "tradeoff"
     }
   },
@@ -80,9 +114,17 @@
     "id": "IP-09",
     "question": "SF2에서 SF2P로 바뀌면서 뭐가 달라졌어?",
     "expected": {
-      "intent": ["analyze", "trend"],
-      "processes": ["SF2", "SF2P"],
-      "metrics_contains": ["freq_ghz"]
+      "intent": [
+        "analyze",
+        "trend"
+      ],
+      "processes": [
+        "SF2",
+        "SF2P"
+      ],
+      "metrics_contains": [
+        "freq_ghz"
+      ]
     },
     "note": "2개 공정 비교(analyze)이나 추이 뉘앙스(trend) 모두 허용"
   },
@@ -91,8 +133,14 @@
     "question": "SF2→SF2P→SF3 변화 추이 알려줘",
     "expected": {
       "intent": "trend",
-      "processes": ["SF2", "SF2P", "SF3"],
-      "metrics_contains": ["freq_ghz"]
+      "processes": [
+        "SF2",
+        "SF2P",
+        "SF3"
+      ],
+      "metrics_contains": [
+        "freq_ghz"
+      ]
     }
   },
   {
@@ -100,8 +148,12 @@
     "question": "VDD 올리면 freq 얼마나 올라가?",
     "expected": {
       "intent": "analyze",
-      "metrics_contains": ["freq_ghz"],
-      "missing_contains": ["process"],
+      "metrics_contains": [
+        "freq_ghz"
+      ],
+      "missing_contains": [
+        "process"
+      ],
       "hint": "sensitivity"
     }
   },
@@ -110,8 +162,12 @@
     "question": "가장 느린 조건이 뭐야?",
     "expected": {
       "intent": "analyze",
-      "metrics_contains": ["freq_ghz"],
-      "missing_contains": ["process"],
+      "metrics_contains": [
+        "freq_ghz"
+      ],
+      "missing_contains": [
+        "process"
+      ],
       "hint": "worst_case"
     }
   },
@@ -120,8 +176,13 @@
     "question": "freq_ghz랑 d_power 상관관계 보여줘",
     "expected": {
       "intent": "analyze",
-      "metrics_contains": ["freq_ghz", "d_power"],
-      "missing_contains": ["process"],
+      "metrics_contains": [
+        "freq_ghz",
+        "d_power"
+      ],
+      "missing_contains": [
+        "process"
+      ],
       "hint": "correlation"
     }
   },
@@ -130,9 +191,16 @@
     "question": "CH138이랑 CH168 성능 차이?",
     "expected": {
       "intent": "analyze",
-      "cell_heights": ["CH138", "CH168"],
-      "metrics_contains": ["freq_ghz"],
-      "missing_contains": ["process"]
+      "cell_heights": [
+        "CH138",
+        "CH168"
+      ],
+      "metrics_contains": [
+        "freq_ghz"
+      ],
+      "missing_contains": [
+        "process"
+      ]
     }
   },
   {
@@ -140,7 +208,10 @@
     "question": "주의할 수치 있어? SF3이랑 SF2 사이에서",
     "expected": {
       "intent": "anomaly",
-      "processes": ["SF3", "SF2"]
+      "processes": [
+        "SF3",
+        "SF2"
+      ]
     }
   },
   {
@@ -148,7 +219,9 @@
     "question": "온도 민감도 분석해줘",
     "expected": {
       "intent": "analyze",
-      "missing_contains": ["process"],
+      "missing_contains": [
+        "process"
+      ],
       "hint": "sensitivity"
     }
   },
@@ -157,7 +230,9 @@
     "question": "worst case 조건 알려줘",
     "expected": {
       "intent": "analyze",
-      "missing_contains": ["process"],
+      "missing_contains": [
+        "process"
+      ],
       "hint": "worst_case"
     }
   },
@@ -166,8 +241,12 @@
     "question": "leakage가 가장 높은 경우는?",
     "expected": {
       "intent": "analyze",
-      "metrics_contains": ["s_power"],
-      "missing_contains": ["process"],
+      "metrics_contains": [
+        "s_power"
+      ],
+      "missing_contains": [
+        "process"
+      ],
       "hint": "worst_case"
     }
   },
@@ -176,8 +255,13 @@
     "question": "freq_ghz와 s_power 사이에 관계가 있어?",
     "expected": {
       "intent": "analyze",
-      "metrics_contains": ["freq_ghz", "s_power"],
-      "missing_contains": ["process"],
+      "metrics_contains": [
+        "freq_ghz",
+        "s_power"
+      ],
+      "missing_contains": [
+        "process"
+      ],
       "hint": "correlation"
     }
   },
@@ -186,9 +270,44 @@
     "question": "전압 변화에 따른 성능 영향 분석해줘",
     "expected": {
       "intent": "analyze",
-      "metrics_contains": ["freq_ghz"],
-      "missing_contains": ["process"],
+      "metrics_contains": [
+        "freq_ghz"
+      ],
+      "missing_contains": [
+        "process"
+      ],
       "hint": "sensitivity"
+    }
+  },
+  {
+    "id": "IP-21",
+    "question": "DB에 어떤 PDK가 있어?",
+    "expected": {
+      "intent": "list"
+    }
+  },
+  {
+    "id": "IP-22",
+    "question": "어떤 공정이 있어?",
+    "expected": {
+      "intent": "list"
+    }
+  },
+  {
+    "id": "IP-23",
+    "question": "SF3 버전 목록 보여줘",
+    "expected": {
+      "intent": "list",
+      "processes": [
+        "SF3"
+      ]
+    }
+  },
+  {
+    "id": "IP-24",
+    "question": "지원하는 공정 뭐가 있어?",
+    "expected": {
+      "intent": "list"
     }
   }
 ]

@@ -14,12 +14,13 @@ SYSTEM_PROMPT = """\
 당신은 반도체 PDK PPA 분석 시스템의 intent 분류기입니다.
 사용자의 질문을 분석하여 intent, entity, analysis_hint를 JSON으로 출력합니다.
 
-## Intent 분류 기준 (4종)
+## Intent 분류 기준 (5종)
 
 1. **trend**: "추이", "히스토리", 또는 3개 이상의 PDK/공정/버전 언급
 2. **anomaly**: "이상치", "주의할 수치", "튀는 거", "anomaly"
-3. **analyze**: 위에 해당하지 않는 모든 분석 (조회, 비교, 민감도, trade-off, worst-case 등)
-4. **unknown**: PPA/PDK와 무관한 질문이거나 분류 불가
+3. **list**: 가용 PDK/공정/버전 목록 조회. "어떤 PDK", "어떤 공정", "공정 목록", "버전 목록", "뭐가 있어", "목록 보여줘", "어떤 버전이 있", "DB에 뭐가 있", "어떤 프로젝트" 등
+4. **analyze**: 위에 해당하지 않는 모든 분석 (조회, 비교, 민감도, trade-off, worst-case 등)
+5. **unknown**: PPA/PDK와 무관한 질문이거나 분류 불가
 
 ## Entity 추출 규칙
 
@@ -233,7 +234,12 @@ def intent_parser(state: PaveAgentState) -> dict:
         entities["metrics"] = ["freq_ghz"]
 
     intent = parsed.get("intent", "unknown")
-    route = "fallback" if intent == "unknown" else "distributed"
+    if intent == "unknown":
+        route = "fallback"
+    elif intent == "list":
+        route = "list"
+    else:
+        route = "distributed"
 
     return {
         "parsed_intent": ParsedIntent(

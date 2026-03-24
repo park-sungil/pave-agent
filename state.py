@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TypedDict, Optional, Any, Literal
 
 
-IntentType = Literal["analyze", "trend", "anomaly", "unknown"]
+IntentType = Literal["analyze", "trend", "anomaly", "list", "unknown"]
 
 AnalysisHint = Literal[
     "profile", "sensitivity", "worst_case", "tradeoff",
