@@ -17,15 +17,15 @@ import shared.pdk_cache as pdk_cache
 
 
 _THEME = Theme({
-    "node":    "bold bright_cyan",
-    "key":     "bright_blue",
+    "node":    "bold white",
+    "key":     "dim white",
     "val":     "white",
-    "error":   "bold bright_red",
-    "warn":    "bold yellow",
-    "prompt":  "bold bright_green",
-    "header":  "bold bright_magenta",
-    "default": "bright_yellow",
-    "info":    "bright_black",
+    "error":   "bold red",
+    "warn":    "yellow",
+    "prompt":  "bold white",
+    "header":  "bold white",
+    "default": "dim white",
+    "info":    "dim white",
 })
 console = Console(theme=_THEME, highlight=False)
 
@@ -130,7 +130,7 @@ def _print_node_debug(chunk: dict) -> None:
         console.print(Panel(
             "\n".join(lines) if lines else "(출력 없음)",
             title=f"[node]{node_name}[/node]",
-            border_style="cyan",
+            border_style="white",
             expand=False,
         ))
 
@@ -142,7 +142,7 @@ def _print_data_table(dt: dict) -> None:
     title = dt.get("title", "")
     if not headers or not rows:
         return
-    table = Table(title=title, box=box.SIMPLE_HEAVY, header_style="bold magenta", show_lines=False)
+    table = Table(title=title, box=box.SIMPLE_HEAVY, header_style="bold white", show_lines=False)
     for h in headers:
         table.add_column(h, overflow="fold")
     for row in rows:
