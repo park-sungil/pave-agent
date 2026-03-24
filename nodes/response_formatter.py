@@ -73,20 +73,20 @@ def _format_list(state: PaveAgentState) -> FinalResponse:
     for r in rows:
         by_process[r["PROCESS"]].append(r)
 
-    lines = [f"총 {len(rows)}개 버전이 있습니다.\n"]
+    headers = ["PROJECT", "PROJECT_NAME", "MASK", "DK_GDS", "HSPICE", "LVS", "PEX"]
+    header_line = "| " + " | ".join(headers) + " |"
+    sep_line = "| " + " | ".join("---" for _ in headers) + " |"
+
+    lines = [f"총 {len(rows)}개 버전이 등록되어 있습니다.\n"]
     table_rows = []
 
     for process in sorted(by_process.keys()):
         entries = by_process[process]
         lines.append(f"### {process}")
+        lines.append(header_line)
+        lines.append(sep_line)
         for e in entries:
-            lines.append(
-                f"  - {e['PROJECT_NAME']} ({e['PROJECT']}) / MASK={e['MASK']}"
-                f" / DK_GDS={e.get('DK_GDS', '')} / HSPICE={e.get('HSPICE', '')}"
-                f" / LVS={e.get('LVS', '')} / PEX={e.get('PEX', '')}"
-            )
-            table_rows.append([
-                process,
+            cols = [
                 e["PROJECT"],
                 e["PROJECT_NAME"],
                 e["MASK"],
@@ -94,7 +94,9 @@ def _format_list(state: PaveAgentState) -> FinalResponse:
                 e.get("HSPICE", ""),
                 e.get("LVS", ""),
                 e.get("PEX", ""),
-            ])
+            ]
+            lines.append("| " + " | ".join(cols) + " |")
+            table_rows.append([process] + cols)
         lines.append("")
 
     text = "\n".join(lines).strip()
