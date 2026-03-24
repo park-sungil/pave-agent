@@ -47,26 +47,13 @@ SQL_DK_GDS_BY_PROJECT_MASK = """
     FETCH FIRST 10 ROWS ONLY
 """
 
-SQL_DK_GDS_GOLDEN_BY_PROJECT_MASK = """
-    SELECT DISTINCT DK_GDS
-    FROM antsdb.PAVE_PDK_VERSION_VIEW
-    WHERE PROJECT = '{project}' AND MASK = '{mask}' AND IS_GOLDEN = 1
-    FETCH FIRST 10 ROWS ONLY
-"""
-
-SQL_HSPICE_COMBOS_BY_DK_GDS = """
-    SELECT DISTINCT HSPICE, LVS, PEX
-    FROM antsdb.PAVE_PDK_VERSION_VIEW
-    WHERE PROJECT = '{project}' AND MASK = '{mask}' AND DK_GDS = '{dk_gds}'
-    FETCH FIRST 10 ROWS ONLY
-"""
-
-SQL_HSPICE_COMBOS_GOLDEN_BY_DK_GDS = """
-    SELECT DISTINCT HSPICE, LVS, PEX
+SQL_GOLDEN_BY_PROJECT_MASK_DK_GDS = """
+    SELECT PDK_ID, PROJECT, PROJECT_NAME, PROCESS, MASK, DK_GDS,
+           HSPICE, LVS, PEX, IS_GOLDEN, VDD_NOMINAL
     FROM antsdb.PAVE_PDK_VERSION_VIEW
     WHERE PROJECT = '{project}' AND MASK = '{mask}' AND DK_GDS = '{dk_gds}'
       AND IS_GOLDEN = 1
-    FETCH FIRST 10 ROWS ONLY
+    FETCH FIRST 1 ROW ONLY
 """
 
 SQL_LATEST_PDK = """
@@ -151,59 +138,32 @@ def _resolve_mask(project: str, mask_hint: str | None = None) -> str:
 def _resolve_dk_gds(project: str, mask: str) -> str | None:
     """project+mask에서 DK_GDS 특정.
 
-    IS_GOLDEN=1인 DK_GDS가 유일하면 자동 선택.
-    그 외에는 사용자에게 목록 제시.
+    1개이면 자동 선택. 여러 개이면 사용자 선택.
+    IS_GOLDEN은 project+mask+dk_gds 단위이므로 이 단계에서 golden으로
+    좁히는 것은 의미 없음 (dk_gds마다 golden이 각각 존재).
     """
-    all_rows = execute_query(SQL_DK_GDS_BY_PROJECT_MASK.format(project=project, mask=mask))
-    if not all_rows:
+    rows = execute_query(SQL_DK_GDS_BY_PROJECT_MASK.format(project=project, mask=mask))
+    if not rows:
         return None
-    all_options = [r["DK_GDS"] for r in all_rows]
-    if len(all_options) == 1:
-        return all_options[0]
-
-    # IS_GOLDEN인 DK_GDS가 유일하면 자동 선택
-    golden_rows = execute_query(SQL_DK_GDS_GOLDEN_BY_PROJECT_MASK.format(
-        project=project, mask=mask))
-    if len(golden_rows) == 1:
-        return golden_rows[0]["DK_GDS"]
-
-    choice = _ask_user(
-        f"DK_GDS 버전을 선택해주세요. ({project} {mask})",
-        all_options,
-    )
-    idx = _parse_choice(choice, len(all_options))
-    return all_options[idx]
+    options = [r["DK_GDS"] for r in rows]
+    if len(options) == 1:
+        return options[0]
+    choice = _ask_user(f"DK_GDS 버전을 선택해주세요. ({project} {mask})", options)
+    idx = _parse_choice(choice, len(options))
+    return options[idx]
 
 
-def _resolve_hspice_combo(project: str, mask: str,
-                           dk_gds: str) -> tuple[str, str, str] | None:
-    """project+mask+dk_gds에서 HSPICE+LVS+PEX 조합 특정.
+def _get_golden_record(project: str, mask: str,
+                       dk_gds: str) -> tuple[str, str, str] | None:
+    """project+mask+dk_gds의 IS_GOLDEN=1 레코드에서 HSPICE+LVS+PEX 확정.
 
-    IS_GOLDEN=1인 조합이 유일하면 자동 선택.
-    그 외에는 사용자에게 목록 제시.
+    이 조합에 IS_GOLDEN은 반드시 1개 존재하므로 사용자 선택 불필요.
     """
-    all_rows = execute_query(SQL_HSPICE_COMBOS_BY_DK_GDS.format(
+    rows = execute_query(SQL_GOLDEN_BY_PROJECT_MASK_DK_GDS.format(
         project=project, mask=mask, dk_gds=dk_gds))
-    if not all_rows:
+    if not rows:
         return None
-    if len(all_rows) == 1:
-        r = all_rows[0]
-        return r["HSPICE"], r["LVS"], r["PEX"]
-
-    # IS_GOLDEN인 조합이 유일하면 자동 선택
-    golden_rows = execute_query(SQL_HSPICE_COMBOS_GOLDEN_BY_DK_GDS.format(
-        project=project, mask=mask, dk_gds=dk_gds))
-    if len(golden_rows) == 1:
-        r = golden_rows[0]
-        return r["HSPICE"], r["LVS"], r["PEX"]
-
-    options = [f"HSPICE={r['HSPICE']} / LVS={r['LVS']} / PEX={r['PEX']}" for r in all_rows]
-    choice = _ask_user(
-        f"SPICE 버전 조합을 선택해주세요. ({project} {mask} {dk_gds})",
-        options,
-    )
-    idx = _parse_choice(choice, len(all_rows))
-    r = all_rows[idx]
+    r = rows[0]
     return r["HSPICE"], r["LVS"], r["PEX"]
 
 
@@ -268,7 +228,7 @@ def _resolve_single_pdk(process: str | None, project: str | None,
     if not dk_gds:
         return None
 
-    combo = _resolve_hspice_combo(proj_code, mask, dk_gds)
+    combo = _get_golden_record(proj_code, mask, dk_gds)
     if not combo:
         return None
     hspice, lvs, pex = combo
