@@ -108,11 +108,14 @@ class PaveAgentState(TypedDict):
     chart_specs: Optional[list[ChartSpec]]
     final_response: Optional[FinalResponse]
 
+    # 앱 기동 시 로드된 PDK 카탈로그 (list → response_formatter 직접 참조)
+    available_pdks: Optional[list[dict[str, Any]]]
+
     # fallback
     fallback_result: Optional[dict[str, Any]]
 
     # 공통
-    route: Literal["distributed", "fallback"]
+    route: Literal["distributed", "fallback", "list"]
     error: Optional[str]
 
     # anomaly SSE 진행상황

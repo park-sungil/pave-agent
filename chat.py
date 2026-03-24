@@ -7,6 +7,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command
 
 from graph import build_graph
+import shared.pdk_cache as pdk_cache
 
 
 # 노드별 출력할 state 키 및 포맷 정의
@@ -152,6 +153,7 @@ def main():
         print("[DEBUG MODE] 노드 흐름 출력 활성화")
     print("종료: quit / exit\n")
 
+    pdk_cache.load()
     graph = build_graph(checkpointer=MemorySaver())
 
     conversation_id = str(uuid.uuid4())[:8]
@@ -178,6 +180,7 @@ def main():
             "conversation_id": conversation_id,
             "conversation_history": history,
             "screen_context": None,
+            "available_pdks": pdk_cache.get(),
         }
 
         try:

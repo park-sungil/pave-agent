@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections import defaultdict
 
 from langchain_core.messages import SystemMessage, HumanMessage
 
@@ -39,6 +40,76 @@ SYSTEM_PROMPT = """\
 }
 ```
 """
+
+
+def _format_list(state: PaveAgentState) -> FinalResponse:
+    """list intent 처리: available_pdks를 코드 기반으로 직접 포맷 (LLM 없음)"""
+    rows = list(state.get("available_pdks") or [])
+
+    # entities 기반 인메모리 필터링
+    entities = (state.get("parsed_intent") or {}).get("entities", {})
+    processes = entities.get("processes") or []
+    projects = entities.get("projects") or []
+    project_names = entities.get("project_names") or []
+
+    if processes:
+        rows = [r for r in rows if r.get("PROCESS") in processes]
+    elif projects:
+        rows = [r for r in rows if r.get("PROJECT") in projects]
+    elif project_names:
+        rows = [r for r in rows if r.get("PROJECT_NAME") in project_names]
+
+    if not rows:
+        return FinalResponse(
+            text="조회된 PDK 버전이 없습니다.",
+            data_tables=[],
+            charts=[],
+            applied_defaults={},
+            metadata={},
+        )
+
+    # process별 그룹핑하여 텍스트 생성
+    by_process: dict[str, list[dict]] = defaultdict(list)
+    for r in rows:
+        by_process[r["PROCESS"]].append(r)
+
+    lines = [f"총 {len(rows)}개 버전이 있습니다.\n"]
+    table_rows = []
+
+    for process in sorted(by_process.keys()):
+        entries = by_process[process]
+        lines.append(f"### {process}")
+        for e in entries:
+            lines.append(
+                f"  - {e['PROJECT_NAME']} ({e['PROJECT']}) / MASK={e['MASK']}"
+                f" / DK_GDS={e.get('DK_GDS', '')} / HSPICE={e.get('HSPICE', '')}"
+                f" / LVS={e.get('LVS', '')} / PEX={e.get('PEX', '')}"
+            )
+            table_rows.append([
+                process,
+                e["PROJECT"],
+                e["PROJECT_NAME"],
+                e["MASK"],
+                e.get("DK_GDS", ""),
+                e.get("HSPICE", ""),
+                e.get("LVS", ""),
+                e.get("PEX", ""),
+            ])
+        lines.append("")
+
+    text = "\n".join(lines).strip()
+    data_table = {
+        "title": "가용 PDK 목록",
+        "headers": ["PROCESS", "PROJECT", "PROJECT_NAME", "MASK", "DK_GDS", "HSPICE", "LVS", "PEX"],
+        "rows": table_rows,
+    }
+    return FinalResponse(
+        text=text,
+        data_tables=[data_table],
+        charts=[],
+        applied_defaults={},
+        metadata={},
+    )
 
 
 def _build_user_message(state: PaveAgentState) -> str:
@@ -128,7 +199,14 @@ def _fallback_format(state: PaveAgentState) -> FinalResponse:
 
 
 def response_formatter(state: PaveAgentState) -> dict:
-    """한국어 정제 + 응답 포맷팅 (LLM-light)"""
+    """한국어 정제 + 응답 포맷팅 (LLM-light)
+
+    list intent는 LLM 없이 available_pdks를 직접 포맷하여 반환.
+    """
+    intent = (state.get("parsed_intent") or {}).get("intent")
+    if intent == "list":
+        return {"final_response": _format_list(state)}
+
     user_message = _build_user_message(state)
 
     llm = get_llm("light")

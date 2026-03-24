@@ -12,10 +12,14 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command
 
 from graph import build_graph
+import shared.pdk_cache as pdk_cache
 
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="pave-agent", version="0.8.0")
+
+# 앱 기동 시 PDK 카탈로그 1회 로드
+pdk_cache.load()
 
 # 체크포인터 (prod에서는 persistent store 사용)
 _checkpointer = MemorySaver()
@@ -103,6 +107,7 @@ async def analyze(req: AnalyzeRequest):
         "conversation_id": conv_id,
         "conversation_history": req.conversation_history,
         "screen_context": req.screen_context,
+        "available_pdks": pdk_cache.get(),
     }
 
     async def event_stream():
