@@ -229,8 +229,21 @@ def main():
                             val = intr.value
                             q = val.get("question", str(val))
                             options = val.get("options", [])
+                            table_headers = val.get("table_headers")
+                            table_rows_data = val.get("table_rows", [])
                             console.print(Panel(q, title="[warn]질문[/warn]", border_style="yellow"))
-                            if options:
+                            if table_headers:
+                                # 구조화 테이블 (pdk_resolver 버전 선택용)
+                                tbl = Table(box=box.SIMPLE_HEAVY, show_header=True,
+                                            header_style="bold white", show_lines=False)
+                                tbl.add_column("#", style="bold white", width=3, justify="right")
+                                for h in table_headers:
+                                    tbl.add_column(h, style="white")
+                                for i, row in enumerate(table_rows_data, 1):
+                                    tbl.add_row(str(i), *[str(c) for c in row])
+                                console.print(tbl)
+                            elif options:
+                                # 단순 번호 목록 fallback
                                 tbl = Table(box=box.SIMPLE_HEAVY, show_header=True,
                                             header_style="bold white", show_lines=False)
                                 tbl.add_column("#", style="bold white", width=3, justify="right")
