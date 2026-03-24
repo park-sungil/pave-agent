@@ -47,20 +47,36 @@ SQL_DK_GDS_BY_PROJECT_MASK = """
     FETCH FIRST 10 ROWS ONLY
 """
 
-SQL_GOLDEN_PDK = """
-    SELECT PDK_ID, PROJECT, PROJECT_NAME, PROCESS, MASK, DK_GDS,
-           HSPICE, LVS, PEX, IS_GOLDEN, VDD_NOMINAL
+SQL_DK_GDS_GOLDEN_BY_PROJECT_MASK = """
+    SELECT DISTINCT DK_GDS
     FROM antsdb.PAVE_PDK_VERSION_VIEW
     WHERE PROJECT = '{project}' AND MASK = '{mask}' AND IS_GOLDEN = 1
-    FETCH FIRST 5 ROWS ONLY
+    FETCH FIRST 10 ROWS ONLY
 """
 
-SQL_ALL_PDKS_BY_PROJECT_MASK = """
+SQL_HSPICE_COMBOS_BY_DK_GDS = """
+    SELECT DISTINCT HSPICE, LVS, PEX
+    FROM antsdb.PAVE_PDK_VERSION_VIEW
+    WHERE PROJECT = '{project}' AND MASK = '{mask}' AND DK_GDS = '{dk_gds}'
+    FETCH FIRST 10 ROWS ONLY
+"""
+
+SQL_HSPICE_COMBOS_GOLDEN_BY_DK_GDS = """
+    SELECT DISTINCT HSPICE, LVS, PEX
+    FROM antsdb.PAVE_PDK_VERSION_VIEW
+    WHERE PROJECT = '{project}' AND MASK = '{mask}' AND DK_GDS = '{dk_gds}'
+      AND IS_GOLDEN = 1
+    FETCH FIRST 10 ROWS ONLY
+"""
+
+SQL_LATEST_PDK = """
     SELECT PDK_ID, PROJECT, PROJECT_NAME, PROCESS, MASK, DK_GDS,
            HSPICE, LVS, PEX, IS_GOLDEN, VDD_NOMINAL
     FROM antsdb.PAVE_PDK_VERSION_VIEW
-    WHERE PROJECT = '{project}' AND MASK = '{mask}'
-    FETCH FIRST 10 ROWS ONLY
+    WHERE PROJECT = '{project}' AND MASK = '{mask}' AND DK_GDS = '{dk_gds}'
+      AND HSPICE = '{hspice}' AND LVS = '{lvs}' AND PEX = '{pex}'
+    ORDER BY CREATED_AT DESC
+    FETCH FIRST 1 ROW ONLY
 """
 
 
@@ -132,28 +148,73 @@ def _resolve_mask(project: str, mask_hint: str | None = None) -> str:
     return options[idx]
 
 
-def _resolve_golden(project: str, mask: str) -> dict | None:
-    """golden PDK 조회. 없으면 전체 조회 후 선택"""
-    rows = execute_query(SQL_GOLDEN_PDK.format(project=project, mask=mask))
-    if rows:
-        if len(rows) == 1:
-            return rows[0]
-        # golden이 여러 개인 경우
-        options = [f"{r['DK_GDS']} (HSPICE={r['HSPICE']})" for r in rows]
-        choice = _ask_user("Golden 버전이 여러 개 있습니다. 선택해주세요.", options)
-        idx = _parse_choice(choice, len(rows))
-        return rows[idx]
+def _resolve_dk_gds(project: str, mask: str) -> str | None:
+    """project+mask에서 DK_GDS 특정.
 
-    # golden 없음 → 전체에서 선택
-    rows = execute_query(SQL_ALL_PDKS_BY_PROJECT_MASK.format(project=project, mask=mask))
-    if not rows:
+    IS_GOLDEN=1인 DK_GDS가 유일하면 자동 선택.
+    그 외에는 사용자에게 목록 제시.
+    """
+    all_rows = execute_query(SQL_DK_GDS_BY_PROJECT_MASK.format(project=project, mask=mask))
+    if not all_rows:
         return None
-    if len(rows) == 1:
-        return rows[0]
-    options = [f"{r['DK_GDS']} (Golden={'Y' if r['IS_GOLDEN'] else 'N'})" for r in rows]
-    choice = _ask_user("Golden PDK가 없습니다. 버전을 선택해주세요.", options)
-    idx = _parse_choice(choice, len(rows))
-    return rows[idx]
+    all_options = [r["DK_GDS"] for r in all_rows]
+    if len(all_options) == 1:
+        return all_options[0]
+
+    # IS_GOLDEN인 DK_GDS가 유일하면 자동 선택
+    golden_rows = execute_query(SQL_DK_GDS_GOLDEN_BY_PROJECT_MASK.format(
+        project=project, mask=mask))
+    if len(golden_rows) == 1:
+        return golden_rows[0]["DK_GDS"]
+
+    choice = _ask_user(
+        f"DK_GDS 버전을 선택해주세요. ({project} {mask})",
+        all_options,
+    )
+    idx = _parse_choice(choice, len(all_options))
+    return all_options[idx]
+
+
+def _resolve_hspice_combo(project: str, mask: str,
+                           dk_gds: str) -> tuple[str, str, str] | None:
+    """project+mask+dk_gds에서 HSPICE+LVS+PEX 조합 특정.
+
+    IS_GOLDEN=1인 조합이 유일하면 자동 선택.
+    그 외에는 사용자에게 목록 제시.
+    """
+    all_rows = execute_query(SQL_HSPICE_COMBOS_BY_DK_GDS.format(
+        project=project, mask=mask, dk_gds=dk_gds))
+    if not all_rows:
+        return None
+    if len(all_rows) == 1:
+        r = all_rows[0]
+        return r["HSPICE"], r["LVS"], r["PEX"]
+
+    # IS_GOLDEN인 조합이 유일하면 자동 선택
+    golden_rows = execute_query(SQL_HSPICE_COMBOS_GOLDEN_BY_DK_GDS.format(
+        project=project, mask=mask, dk_gds=dk_gds))
+    if len(golden_rows) == 1:
+        r = golden_rows[0]
+        return r["HSPICE"], r["LVS"], r["PEX"]
+
+    options = [f"HSPICE={r['HSPICE']} / LVS={r['LVS']} / PEX={r['PEX']}" for r in all_rows]
+    choice = _ask_user(
+        f"SPICE 버전 조합을 선택해주세요. ({project} {mask} {dk_gds})",
+        options,
+    )
+    idx = _parse_choice(choice, len(all_rows))
+    r = all_rows[idx]
+    return r["HSPICE"], r["LVS"], r["PEX"]
+
+
+def _get_latest_pdk(project: str, mask: str, dk_gds: str,
+                    hspice: str, lvs: str, pex: str) -> dict | None:
+    """project+mask+dk_gds+hspice+lvs+pex 조합에서 최신 pdk_id 조회"""
+    rows = execute_query(SQL_LATEST_PDK.format(
+        project=project, mask=mask, dk_gds=dk_gds,
+        hspice=hspice, lvs=lvs, pex=pex,
+    ))
+    return rows[0] if rows else None
 
 
 def _parse_choice(choice: str, max_idx: int) -> int:
@@ -190,7 +251,10 @@ def _row_to_resolved_pdk(row: dict) -> ResolvedPDK:
 def _resolve_single_pdk(process: str | None, project: str | None,
                          project_name: str | None,
                          mask_hint: str | None = None) -> ResolvedPDK | None:
-    """하나의 process/project 소스로부터 PDK 1개 특정"""
+    """하나의 process/project 소스로부터 PDK 1개 특정.
+
+    계층 순서: project → mask → dk_gds → hspice+lvs+pex → 최신 pdk_id
+    """
     proj_row = _resolve_project(process, project, project_name)
     if not proj_row:
         return None
@@ -200,7 +264,16 @@ def _resolve_single_pdk(process: str | None, project: str | None,
     if not mask:
         return None
 
-    pdk_row = _resolve_golden(proj_code, mask)
+    dk_gds = _resolve_dk_gds(proj_code, mask)
+    if not dk_gds:
+        return None
+
+    combo = _resolve_hspice_combo(proj_code, mask, dk_gds)
+    if not combo:
+        return None
+    hspice, lvs, pex = combo
+
+    pdk_row = _get_latest_pdk(proj_code, mask, dk_gds, hspice, lvs, pex)
     if not pdk_row:
         return None
 
