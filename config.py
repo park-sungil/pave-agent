@@ -22,16 +22,10 @@ class Settings(BaseSettings):
     anthropic_model_heavy: str = "claude-sonnet-4-20250514"
     anthropic_model_light: str = "claude-haiku-4-5-20251001"
 
-    # DB
-    db_type: Literal["oracle", "sqlite"] = "sqlite"
-
-    # Oracle
+    # Oracle DB
     oracle_dsn: str = ""
     oracle_user: str = "antsdb"
     oracle_password: str = ""
-
-    # SQLite
-    sqlite_path: str = "./pave_mock.db"
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
