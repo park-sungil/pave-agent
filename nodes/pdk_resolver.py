@@ -48,7 +48,7 @@ SQL_DK_GDS_BY_PROJECT_MASK = """
 """
 
 SQL_GOLDEN_PDK = """
-    SELECT PAVE_PDK_ID, PROJECT, PROJECT_NAME, PROCESS, MASK, DK_GDS,
+    SELECT PDK_ID, PROJECT, PROJECT_NAME, PROCESS, MASK, DK_GDS,
            HSPICE, LVS, PEX, IS_GOLDEN, VDD_NOMINAL
     FROM antsdb.PAVE_PDK_VERSION_VIEW
     WHERE PROJECT = '{project}' AND MASK = '{mask}' AND IS_GOLDEN = 1
@@ -56,7 +56,7 @@ SQL_GOLDEN_PDK = """
 """
 
 SQL_ALL_PDKS_BY_PROJECT_MASK = """
-    SELECT PAVE_PDK_ID, PROJECT, PROJECT_NAME, PROCESS, MASK, DK_GDS,
+    SELECT PDK_ID, PROJECT, PROJECT_NAME, PROCESS, MASK, DK_GDS,
            HSPICE, LVS, PEX, IS_GOLDEN, VDD_NOMINAL
     FROM antsdb.PAVE_PDK_VERSION_VIEW
     WHERE PROJECT = '{project}' AND MASK = '{mask}'
@@ -168,7 +168,7 @@ def _parse_choice(choice: str, max_idx: int) -> int:
 def _row_to_resolved_pdk(row: dict) -> ResolvedPDK:
     """DB 행 → ResolvedPDK 변환"""
     return ResolvedPDK(
-        pdk_id=row["PAVE_PDK_ID"],
+        pdk_id=row["PDK_ID"],
         process=row.get("PROCESS", ""),
         project=row["PROJECT"],
         project_name=row["PROJECT_NAME"],

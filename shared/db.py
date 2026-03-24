@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from typing import Any
+import oracledb
 
 from config import settings
 
+# Oracle Thick 모드 초기화 (모듈 로드 시 1회만 실행)
+oracledb.init_oracle_client()
 
-def _get_oracle_connection() -> Any:
+
+def _get_oracle_connection():
     """Oracle 연결 반환"""
-    import oracledb
-
-    oracledb.init_oracle_client()
     return oracledb.connect(
         user=settings.oracle_user,
         password=settings.oracle_password,

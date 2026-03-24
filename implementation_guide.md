@@ -61,7 +61,6 @@ pave-agent/
 langgraph>=0.2.0
 langchain>=0.3.0
 langchain-openai>=0.2.0
-langchain-anthropic>=0.2.0
 fastapi>=0.115.0
 uvicorn>=0.32.0
 python-dotenv>=1.0.0
@@ -75,18 +74,11 @@ sse-starlette>=2.0.0
 
 ### .env.example
 ```
-# LLM (prod: 사내 모델)
-LLM_PROVIDER=openai_compat
+# LLM — 사내 OpenAI 호환 API
 LLM_BASE_URL=http://your-internal-api.com/v1
 LLM_API_KEY=your-key
 LLM_MODEL_HEAVY=GLM4.7
 LLM_MODEL_LIGHT=MiniMax-M2.1
-
-# LLM (dev: Anthropic Claude)
-# LLM_PROVIDER=anthropic
-# ANTHROPIC_API_KEY=sk-...
-# ANTHROPIC_MODEL_HEAVY=claude-sonnet-4-20250514
-# ANTHROPIC_MODEL_LIGHT=claude-haiku-4-5-20251001
 
 # Oracle DB
 ORACLE_DSN=your-tns-dsn
@@ -101,7 +93,7 @@ ORACLE_PASSWORD=your-password
 ### config.py
 - pydantic-settings 기반
 - .env에서 LLM/DB 설정 로딩
-- LLM_PROVIDER: "openai_compat" (prod) / "anthropic" (dev)
+- LLM_BASE_URL + LLM_MODEL_HEAVY/LIGHT으로 사내 모델 설정
 
 ### state.py
 - SPEC_v8.md 섹션 5의 타입 정의를 그대로 구현
@@ -123,9 +115,8 @@ ORACLE_PASSWORD=your-password
 
 ### shared/llm.py
 - heavy/light 2-tier LLM 클라이언트
-- get_llm(tier: Literal["heavy", "light"]) → ChatOpenAI 또는 ChatAnthropic
-- LLM_PROVIDER=openai_compat: LLM_BASE_URL + LLM_MODEL_HEAVY/LIGHT 사용
-- LLM_PROVIDER=anthropic: ANTHROPIC_API_KEY + ANTHROPIC_MODEL_HEAVY/LIGHT 사용
+- get_llm(tier: Literal["heavy", "light"]) → ChatOpenAI
+- LLM_BASE_URL + LLM_MODEL_HEAVY/LIGHT 사용
 
 **검증**: `PYTHONPATH=. python test_connections.py db` 성공.
 

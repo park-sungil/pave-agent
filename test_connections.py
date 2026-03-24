@@ -26,15 +26,15 @@ def test_db():
 
     # 최신 PDK 샘플 조회
     rows = execute_query(
-        "SELECT PAVE_PDK_ID, PROCESS, PROJECT_NAME, MASK, IS_GOLDEN"
+        "SELECT PDK_ID, PROCESS, PROJECT_NAME, MASK, IS_GOLDEN"
         " FROM antsdb.PAVE_PDK_VERSION_VIEW"
-        " ORDER BY PAVE_PDK_ID DESC"
+        " ORDER BY PDK_ID DESC"
         " FETCH FIRST 5 ROWS ONLY"
     )
     print("[DB] 최근 PDK 5건:")
     for r in rows:
         golden = "★" if r["IS_GOLDEN"] else " "
-        print(f"  {golden} ID={r['PAVE_PDK_ID']}  {r['PROCESS']:<6}  {r['PROJECT_NAME']:<12}  {r['MASK']}")
+        print(f"  {golden} ID={r['PDK_ID']}  {r['PROCESS']:<6}  {r['PROJECT_NAME']:<12}  {r['MASK']}")
 
     print("[DB] OK\n")
 

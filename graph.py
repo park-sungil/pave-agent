@@ -19,8 +19,12 @@ def _route_after_intent(state: PaveAgentState) -> str:
     return state.get("route", "distributed")
 
 
-def build_graph():
-    """LangGraph 그래프 빌드"""
+def build_graph(checkpointer=None):
+    """LangGraph 그래프 빌드
+
+    Args:
+        checkpointer: LangGraph checkpointer (interrupt/resume 지원 시 필요)
+    """
     builder = StateGraph(PaveAgentState)
 
     # 노드 등록
@@ -61,8 +65,8 @@ def build_graph():
     builder.add_edge("visualizer", "response_formatter")
     builder.add_edge("response_formatter", END)
 
-    return builder.compile()
+    return builder.compile(checkpointer=checkpointer)
 
 
-# 컴파일된 그래프 싱글턴
+# 컴파일된 그래프 싱글턴 (checkpointer 없음 — API에서 별도 주입)
 graph = build_graph()

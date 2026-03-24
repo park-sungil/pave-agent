@@ -6,8 +6,7 @@ PDK cell-level PPA 분석 에이전트. 사용자의 자연어 질문을 받아 
 
 - **Stack**: Python 3.12, LangGraph, LangChain, FastAPI
 - **DB**: Oracle
-- **LLM (prod)**: 사내 모델 (OpenAI 호환 API) — heavy/light 2-tier
-- **LLM (dev)**: Anthropic Claude (Sonnet=heavy, Haiku=light)
+- **LLM**: 사내 모델 (OpenAI 호환 API) — heavy/light 2-tier
 
 ## Architecture — 분산 노드 + Fallback ReAct
 
