@@ -118,6 +118,35 @@ def _format_list(state: PaveAgentState) -> FinalResponse:
     )
 
 
+def _format_selected_pdks_header(resolution: dict) -> str:
+    """선택된 PDK 버전 정보를 마크다운 테이블로 반환.
+
+    분석 응답 앞에 코드 기반으로 고정 삽입하여
+    LLM이 누락하더라도 항상 표시되도록 보장.
+    """
+    pdks = resolution.get("target_pdks") or []
+    if not pdks:
+        return ""
+
+    headers = ["PROJECT_NAME", "MASK", "DK_GDS", "HSPICE", "LVS", "PEX", "PDK_ID"]
+    header_line = "| " + " | ".join(headers) + " |"
+    sep_line    = "| " + " | ".join("---" for _ in headers) + " |"
+    rows = []
+    for p in pdks:
+        rows.append("| " + " | ".join([
+            str(p.get("project_name", "")),
+            str(p.get("mask", "")),
+            str(p.get("dk_gds", "")),
+            str(p.get("hspice", "")),
+            str(p.get("lvs", "")),
+            str(p.get("pex", "")),
+            str(p.get("pdk_id", "")),
+        ]) + " |")
+
+    lines = ["**선택된 버전**", "", header_line, sep_line] + rows + [""]
+    return "\n".join(lines)
+
+
 def _build_user_message(state: PaveAgentState) -> str:
     """포맷터에 전달할 사용자 메시지 구성"""
     parts = []
@@ -195,8 +224,9 @@ def _fallback_format(state: PaveAgentState) -> FinalResponse:
         text = "응답을 생성할 수 없습니다."
 
     resolution = state.get("pdk_resolution") or {}
+    header = _format_selected_pdks_header(resolution)
     return FinalResponse(
-        text=text,
+        text=header + text,
         data_tables=[],
         charts=state.get("chart_specs") or [],
         applied_defaults=resolution.get("applied_defaults", {}),
@@ -231,9 +261,10 @@ def response_formatter(state: PaveAgentState) -> dict:
         return {"final_response": _fallback_format(state)}
 
     resolution = state.get("pdk_resolution") or {}
+    header = _format_selected_pdks_header(resolution)
     return {
         "final_response": FinalResponse(
-            text=parsed["text"],
+            text=header + parsed["text"],
             data_tables=parsed.get("data_tables", []),
             charts=state.get("chart_specs") or [],
             applied_defaults=resolution.get("applied_defaults", {}),
