@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 import uuid
 
 from langgraph.checkpoint.memory import MemorySaver
@@ -10,57 +11,16 @@ from graph import build_graph
 
 def main():
     """디버깅용 대화형 CLI (interrupt 지원)"""
+    # Windows 터미널 UTF-8 처리
+    if hasattr(sys.stdin, "reconfigure"):
+        sys.stdin.reconfigure(encoding="utf-8")
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+
     print("=== pave-agent v8 CLI ===")
     print("종료: quit / exit\n")
 
-    checkpointer = MemorySaver()
-    graph = build_graph().with_config(checkpointer=checkpointer) if False else None
-    # compile with checkpointer for interrupt support
-    graph = build_graph()
-    graph = graph.graph if hasattr(graph, "graph") else None
-
-    # rebuild with checkpointer
-    from langgraph.graph import StateGraph, START, END
-    from state import PaveAgentState
-    from nodes.intent_parser import intent_parser
-    from nodes.pdk_resolver import pdk_resolver
-    from nodes.query_builder import query_builder
-    from nodes.data_executor import data_executor
-    from nodes.analyzer import analyzer
-    from nodes.interpreter import interpreter
-    from nodes.visualizer import visualizer
-    from nodes.response_formatter import response_formatter
-    from nodes.fallback_agent import fallback_agent
-
-    def _route(state):
-        return state.get("route", "distributed")
-
-    builder = StateGraph(PaveAgentState)
-    builder.add_node("intent_parser", intent_parser)
-    builder.add_node("pdk_resolver", pdk_resolver)
-    builder.add_node("query_builder", query_builder)
-    builder.add_node("data_executor", data_executor)
-    builder.add_node("analyzer", analyzer)
-    builder.add_node("interpreter", interpreter)
-    builder.add_node("visualizer", visualizer)
-    builder.add_node("response_formatter", response_formatter)
-    builder.add_node("fallback_agent", fallback_agent)
-
-    builder.add_edge(START, "intent_parser")
-    builder.add_conditional_edges("intent_parser", _route, {
-        "distributed": "pdk_resolver",
-        "fallback": "fallback_agent",
-    })
-    builder.add_edge("pdk_resolver", "query_builder")
-    builder.add_edge("query_builder", "data_executor")
-    builder.add_edge("data_executor", "analyzer")
-    builder.add_edge("analyzer", "interpreter")
-    builder.add_edge("interpreter", "visualizer")
-    builder.add_edge("fallback_agent", "visualizer")
-    builder.add_edge("visualizer", "response_formatter")
-    builder.add_edge("response_formatter", END)
-
-    graph = builder.compile(checkpointer=checkpointer)
+    graph = build_graph(checkpointer=MemorySaver())
 
     conversation_id = str(uuid.uuid4())[:8]
     history: list[dict] = []
@@ -89,7 +49,7 @@ def main():
         }
 
         try:
-            result = graph.invoke(state, config)
+            graph.invoke(state, config)
 
             # interrupt 처리 루프
             while True:
@@ -97,7 +57,6 @@ def main():
                 if not snapshot.next:
                     break
 
-                # interrupt 질문 표시
                 for task in snapshot.tasks:
                     if task.interrupts:
                         for intr in task.interrupts:
@@ -109,7 +68,6 @@ def main():
                                 for i, opt in enumerate(options, 1):
                                     print(f"  {i}. {opt}")
 
-                # 사용자 응답
                 try:
                     answer = input("응답> ").strip()
                 except (EOFError, KeyboardInterrupt):
@@ -119,7 +77,7 @@ def main():
                 if not answer:
                     break
 
-                result = graph.invoke(Command(resume=answer), config)
+                graph.invoke(Command(resume=answer), config)
 
             # 최종 결과 출력
             final = graph.get_state(config).values

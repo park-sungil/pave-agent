@@ -46,8 +46,7 @@ pave-agent/
 ├── shared/
 │   ├── __init__.py
 │   ├── db.py
-│   ├── llm.py
-│   └── mock_data.py
+│   └── llm.py
 ├── api/
 │   ├── __init__.py
 │   └── routes.py
@@ -62,7 +61,6 @@ pave-agent/
 langgraph>=0.2.0
 langchain>=0.3.0
 langchain-openai>=0.2.0
-langchain-anthropic>=0.2.0
 fastapi>=0.115.0
 uvicorn>=0.32.0
 python-dotenv>=1.0.0
@@ -76,27 +74,16 @@ sse-starlette>=2.0.0
 
 ### .env.example
 ```
-# LLM (prod: 사내 모델)
+# LLM — 사내 OpenAI 호환 API
 LLM_BASE_URL=http://your-internal-api.com/v1
 LLM_API_KEY=your-key
 LLM_MODEL_HEAVY=GLM4.7
 LLM_MODEL_LIGHT=MiniMax-M2.1
 
-# LLM (dev: Anthropic Claude)
-# LLM_PROVIDER=anthropic
-# ANTHROPIC_API_KEY=sk-...
-# LLM_MODEL_HEAVY=claude-sonnet-4-20250514
-# LLM_MODEL_LIGHT=claude-haiku-4-5-20251001
-
-# DB (prod: Oracle)
-# DB_TYPE=oracle
-# ORACLE_DSN=your-tns-dsn
-# ORACLE_USER=antsdb
-# ORACLE_PASSWORD=your-password
-
-# DB (dev: SQLite)
-DB_TYPE=sqlite
-SQLITE_PATH=./pave_mock.db
+# Oracle DB
+ORACLE_DSN=your-tns-dsn
+ORACLE_USER=antsdb
+ORACLE_PASSWORD=your-password
 ```
 
 ---
@@ -106,7 +93,7 @@ SQLITE_PATH=./pave_mock.db
 ### config.py
 - pydantic-settings 기반
 - .env에서 LLM/DB 설정 로딩
-- LLM_PROVIDER: "openai_compat" (prod) / "anthropic" (dev)
+- LLM_BASE_URL + LLM_MODEL_HEAVY/LIGHT으로 사내 모델 설정
 
 ### state.py
 - SPEC_v8.md 섹션 5의 타입 정의를 그대로 구현
@@ -122,22 +109,16 @@ SQLITE_PATH=./pave_mock.db
 ## 2단계: shared/ (DB + LLM 인프라)
 
 ### shared/db.py
-- Oracle (prod) / SQLite (dev) 자동 전환
+- Oracle Thick 모드 연결 (oracledb)
 - execute_query(sql: str, timeout: int = 30) → list[dict]
 - SELECT only 검증 (안전장치)
 
 ### shared/llm.py
 - heavy/light 2-tier LLM 클라이언트
-- get_llm(tier: Literal["heavy", "light"]) → ChatOpenAI 또는 ChatAnthropic
-- prod: OpenAI 호환 API (base_url + model)
-- dev: Anthropic Claude
+- get_llm(tier: Literal["heavy", "light"]) → ChatOpenAI
+- LLM_BASE_URL + LLM_MODEL_HEAVY/LIGHT 사용
 
-### shared/mock_data.py
-- SQLite mock DB 생성 (PAVE_PDK_VERSION_VIEW, PAVE_PPA_DATA_VIEW)
-- schema_catalog.md 기반으로 테이블 생성 + 샘플 데이터 삽입
-- 최소 2개 공정 × 2개 project × 2개 mask + PPA 데이터 수백 행
-
-**검증**: `python -c "from shared.db import execute_query; print(execute_query('SELECT 1'))"` 성공.
+**검증**: `PYTHONPATH=. python test_connections.py db` 성공.
 
 ---
 
@@ -221,7 +202,7 @@ WHERE PROJECT = '{project}' AND MASK = '{mask}' AND IS_GOLDEN = 1
 FETCH FIRST 5 ROWS ONLY
 ```
 
-**검증**: mock DB에서 "SF3" 입력 → project 목록 반환, "Thetis" → PDK 특정 확인.
+**검증**: Oracle DB에서 "SF3" 입력 → project 목록 반환, project_name 입력 → PDK 특정 확인.
 
 ---
 
@@ -248,7 +229,7 @@ FETCH FIRST 5 ROWS ONLY
 - 타임아웃: 30s (일반), 60s (bulk)
 - 결과: datasets[] + warnings[]
 
-**검증**: mock DB에서 실제 SQL 실행 → 결과 행 반환 확인.
+**검증**: Oracle DB에서 실제 SQL 실행 → 결과 행 반환 확인.
 
 ---
 
@@ -270,7 +251,7 @@ FETCH FIRST 5 ROWS ONLY
 ### 의존
 - pandas, numpy, scipy.stats
 
-**검증**: mock 데이터로 각 모드 단위 테스트. 특히 anomaly 모드는 의도적으로 이상치를 넣은 mock 데이터로 검증.
+**검증**: Oracle DB 실 데이터로 각 모드 단위 테스트. anomaly 모드는 z-score 임계값 조정이 필요할 수 있음.
 
 ---
 
@@ -359,12 +340,12 @@ FETCH FIRST 5 ROWS ONLY
 | 단계 | 검증 항목 | 통과 기준 |
 |------|-----------|-----------|
 | 1 | state.py 타입 정의 | mypy 에러 없음 |
-| 2 | DB 연결 | mock DB SELECT 성공 |
+| 2 | DB 연결 | Oracle DB SELECT 성공 |
 | 3 | 그래프 stub 흐름 | START → END 도달 |
 | 4 | intent_parser | 15건 중 12건 이상 정확 |
 | 5 | pdk_resolver | "SF3" → project 목록, "Thetis" → PDK 특정 |
 | 6 | query_builder | 생성된 SQL 문법 오류 없음 |
-| 7 | data_executor | mock DB에서 결과 반환 |
+| 7 | data_executor | Oracle DB에서 결과 반환 |
 | 8 | analyzer | 각 모드 단위 테스트 통과 |
 | 9 | interpreter | 한국어 해석 생성, JSON 파싱 성공 |
 | 10 | visualizer | Plotly JSON 스펙 유효 |

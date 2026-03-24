@@ -5,9 +5,8 @@
 PDK cell-level PPA 분석 에이전트. 사용자의 자연어 질문을 받아 Oracle DB에서 데이터를 조회하고 분석 결과를 반환.
 
 - **Stack**: Python 3.12, LangGraph, LangChain, FastAPI
-- **DB**: Oracle (prod), SQLite (dev/mock)
-- **LLM (prod)**: 사내 모델 (OpenAI 호환 API) — heavy/light 2-tier
-- **LLM (dev)**: Anthropic Claude (Sonnet=heavy, Haiku=light)
+- **DB**: Oracle
+- **LLM**: 사내 모델 (OpenAI 호환 API) — heavy/light 2-tier
 
 ## Architecture — 분산 노드 + Fallback ReAct
 
@@ -52,8 +51,7 @@ intent_parser (LLM-light)
 | `nodes/resources/pave_domain.md` | PPA 도메인 지식 |
 | `config.py` + `.env` | 설정 (API 키, DB 접속, 모델명) |
 | `shared/llm.py` | LLM 인스턴스 관리 (heavy/light 2-tier) |
-| `shared/db.py` | DB 연결 (Oracle/SQLite 자동 전환) |
-| `shared/mock_data.py` | SQLite mock 데이터 생성 |
+| `shared/db.py` | DB 연결 (Oracle) |
 | `api/routes.py` | FastAPI 엔드포인트 (/analyze, /clarify) |
 | `chat.py` | 디버깅용 CLI |
 
@@ -74,7 +72,7 @@ PYTHONPATH=. uvicorn api:app --reload          # API 서버
 - Python 3.12, type hints 사용
 - 한국어 docstring/주석
 - `from __future__ import annotations` 모든 파일 상단에
-- DB 쿼리: Oracle SQL 문법 (SQLite 모드에서 자동 변환)
+- DB 쿼리: Oracle SQL 문법
 - SQL에 `AVG()` 집계 함수 사용 금지 — 개별 행 조회 후 analyzer에서 계산
 - 모든 SQL에 `antsdb.` 스키마 접두사, WHERE 필수, FETCH FIRST N ROWS ONLY 필수
 - SQL은 LLM이 생성하지 않음 (fallback 제외) — query_builder의 entity 기반 동적 조립
