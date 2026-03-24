@@ -12,10 +12,11 @@ from nodes.interpreter import interpreter
 from nodes.visualizer import visualizer
 from nodes.response_formatter import response_formatter
 from nodes.fallback_agent import fallback_agent
+from nodes.pdk_lister import pdk_lister
 
 
 def _route_after_intent(state: PaveAgentState) -> str:
-    """intent_parser 후 분기: distributed / fallback"""
+    """intent_parser 후 분기: distributed / list / fallback"""
     return state.get("route", "distributed")
 
 
@@ -37,16 +38,18 @@ def build_graph(checkpointer=None):
     builder.add_node("visualizer", visualizer)
     builder.add_node("response_formatter", response_formatter)
     builder.add_node("fallback_agent", fallback_agent)
+    builder.add_node("pdk_lister", pdk_lister)
 
     # 엣지: START → intent_parser
     builder.add_edge(START, "intent_parser")
 
-    # 조건부 분기: intent_parser → distributed / fallback
+    # 조건부 분기: intent_parser → distributed / list / fallback
     builder.add_conditional_edges(
         "intent_parser",
         _route_after_intent,
         {
             "distributed": "pdk_resolver",
+            "list": "pdk_lister",
             "fallback": "fallback_agent",
         },
     )
@@ -58,8 +61,9 @@ def build_graph(checkpointer=None):
     builder.add_edge("analyzer", "interpreter")
     builder.add_edge("interpreter", "visualizer")
 
-    # fallback → visualizer (공유)
+    # fallback / list → visualizer (공유)
     builder.add_edge("fallback_agent", "visualizer")
+    builder.add_edge("pdk_lister", "visualizer")
 
     # 공유 엣지
     builder.add_edge("visualizer", "response_formatter")
