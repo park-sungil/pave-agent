@@ -5,6 +5,8 @@ import uuid
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command
+from prompt_toolkit import prompt as pt_prompt
+from prompt_toolkit.history import InMemoryHistory
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -157,21 +159,12 @@ def _stream_run(graph, state_or_cmd, config, debug: bool) -> None:
             _print_node_debug(chunk)
 
 
+_input_history = InMemoryHistory()
+
+
 def _safe_input(prompt: str) -> str:
-    """인코딩 무관하게 한국어 입력을 안전하게 읽기"""
-    console.print(f"[prompt]{prompt}[/prompt]", end="")
-    if hasattr(sys.stdin, "buffer"):
-        raw = sys.stdin.buffer.readline()
-        if not raw:
-            raise EOFError
-        raw = raw.rstrip(b"\r\n")
-        for enc in ("utf-8", "cp949", "euc-kr"):
-            try:
-                return raw.decode(enc)
-            except UnicodeDecodeError:
-                continue
-        return raw.decode("utf-8", errors="replace")
-    return input()
+    """한국어/영문 입력 — prompt_toolkit으로 IME 백스페이스 문제 해소"""
+    return pt_prompt(prompt, history=_input_history)
 
 
 def main():
