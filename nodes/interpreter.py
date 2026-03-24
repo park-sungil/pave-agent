@@ -71,6 +71,15 @@ def _build_user_message(state: PaveAgentState, domain_knowledge: str) -> str:
     parts.append(f"## 분석 모드\n{analysis['mode']}")
     parts.append(f"## 분석 결과 (summary_table)\n{json.dumps(analysis['summary_table'], ensure_ascii=False, indent=2)}")
 
+    # VTH tradeoff ratio 테이블이 있으면 포함
+    ratio_table = analysis.get("chart_data", {}).get("ratio_table")
+    ratio_ref = analysis.get("chart_data", {}).get("ratio_reference")
+    if ratio_table:
+        parts.append(
+            f"## VTH ratio 테이블 (기준: {ratio_ref})\n"
+            + json.dumps(ratio_table, ensure_ascii=False, indent=2)
+        )
+
     if analysis["findings"]:
         parts.append(f"## 주요 발견\n{json.dumps(analysis['findings'], ensure_ascii=False, indent=2)}")
 

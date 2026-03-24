@@ -111,20 +111,25 @@ def _resolve_project(process: str | None, project: str | None,
     return {}
 
 
-def _resolve_mask(project: str) -> str:
-    """project의 mask 특정"""
+def _resolve_mask(project: str, mask_hint: str | None = None) -> str:
+    """project의 mask 특정.
+
+    mask_hint가 주어지고 DB에 존재하면 바로 사용 (재질문 없음).
+    """
     rows = execute_query(SQL_MASKS_BY_PROJECT.format(project=project))
     if not rows:
         return ""
-    if len(rows) == 1:
-        return rows[0]["MASK"]
     options = [r["MASK"] for r in rows]
-    choice = _ask_user(
-        f"마스크 버전을 선택해주세요.",
-        options,
-    )
-    idx = _parse_choice(choice, len(rows))
-    return rows[idx]["MASK"]
+    # 사용자가 명시한 mask가 DB에 있으면 바로 반환
+    if mask_hint:
+        matched = next((o for o in options if o.upper() == mask_hint.upper()), None)
+        if matched:
+            return matched
+    if len(options) == 1:
+        return options[0]
+    choice = _ask_user("마스크 버전을 선택해주세요.", options)
+    idx = _parse_choice(choice, len(options))
+    return options[idx]
 
 
 def _resolve_golden(project: str, mask: str) -> dict | None:
@@ -183,14 +188,15 @@ def _row_to_resolved_pdk(row: dict) -> ResolvedPDK:
 
 
 def _resolve_single_pdk(process: str | None, project: str | None,
-                         project_name: str | None) -> ResolvedPDK | None:
+                         project_name: str | None,
+                         mask_hint: str | None = None) -> ResolvedPDK | None:
     """하나의 process/project 소스로부터 PDK 1개 특정"""
     proj_row = _resolve_project(process, project, project_name)
     if not proj_row:
         return None
     proj_code = proj_row["PROJECT"]
 
-    mask = _resolve_mask(proj_code)
+    mask = _resolve_mask(proj_code, mask_hint=mask_hint)
     if not mask:
         return None
 
@@ -284,6 +290,11 @@ def pdk_resolver(state: PaveAgentState) -> dict:
     processes = entities.get("processes") or []
     projects = entities.get("projects") or []
     project_names = entities.get("project_names") or []
+    masks = entities.get("masks") or []
+    missing_params = parsed.get("missing_params") or []
+
+    # 사용자가 명시한 mask가 하나면 hint로 사용 (여러 개면 모호하므로 무시)
+    mask_hint: str | None = masks[0] if len(masks) == 1 else None
 
     target_pdks: list[ResolvedPDK] = []
 
@@ -348,9 +359,21 @@ def pdk_resolver(state: PaveAgentState) -> dict:
             sources.append((choice.strip(), None, None))
 
         for proc, proj, pname in sources:
-            pdk = _resolve_single_pdk(proc, proj, pname)
+            pdk = _resolve_single_pdk(proc, proj, pname, mask_hint=mask_hint)
             if pdk:
                 target_pdks.append(pdk)
+
+        # comparison_version 요청: "이전 버전 대비" 비교가 필요하지만 1개 PDK만 resolve된 경우
+        if "comparison_version" in missing_params and len(target_pdks) == 1:
+            primary = target_pdks[0]
+            choice = _ask_user(
+                f"비교할 이전 버전을 알려주세요. (예: EVT0)",
+                [],
+            )
+            comp_mask = choice.strip()
+            pdk2 = _resolve_single_pdk(None, primary["project"], None, mask_hint=comp_mask)
+            if pdk2:
+                target_pdks.append(pdk2)
 
     if not target_pdks:
         return {"error": "PDK를 특정할 수 없습니다."}
