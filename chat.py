@@ -117,6 +117,24 @@ def _stream_run(graph, state_or_cmd, config, debug: bool) -> None:
             _print_node_debug(chunk)
 
 
+def _safe_input(prompt: str) -> str:
+    """인코딩 무관하게 한국어 입력을 안전하게 읽기 (UTF-8 → CP949 → EUC-KR 순 시도)"""
+    sys.stdout.write(prompt)
+    sys.stdout.flush()
+    if hasattr(sys.stdin, "buffer"):
+        raw = sys.stdin.buffer.readline()
+        if not raw:
+            raise EOFError
+        raw = raw.rstrip(b"\r\n")
+        for enc in ("utf-8", "cp949", "euc-kr"):
+            try:
+                return raw.decode(enc)
+            except UnicodeDecodeError:
+                continue
+        return raw.decode("utf-8", errors="replace")
+    return input()
+
+
 def main():
     """디버깅용 대화형 CLI (interrupt 지원)
 
@@ -124,9 +142,6 @@ def main():
         python chat.py           # 일반 모드
         python chat.py --debug   # 노드 흐름 + state 출력
     """
-    # Windows 터미널 UTF-8 처리
-    if hasattr(sys.stdin, "reconfigure"):
-        sys.stdin.reconfigure(encoding="utf-8")
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
 
@@ -145,7 +160,7 @@ def main():
 
     while True:
         try:
-            question = input("질문> ").strip()
+            question = _safe_input("질문> ").strip()
         except (EOFError, KeyboardInterrupt):
             print("\n종료합니다.")
             break
@@ -186,7 +201,7 @@ def main():
                                     print(f"  {i}. {opt}")
 
                 try:
-                    answer = input("응답> ").strip()
+                    answer = _safe_input("응답> ").strip()
                 except (EOFError, KeyboardInterrupt):
                     print("\n취소합니다.")
                     break
