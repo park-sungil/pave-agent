@@ -9,7 +9,7 @@ from state import PaveAgentState
 logger = logging.getLogger(__name__)
 
 SQL_LIST_ALL = """
-    SELECT DISTINCT PROCESS, PROJECT, PROJECT_NAME, MASK, IS_GOLDEN
+    SELECT DISTINCT PROCESS, PROJECT, PROJECT_NAME, MASK, DK_GDS, HSPICE, LVS, PEX, IS_GOLDEN
     FROM antsdb.PAVE_PDK_VERSION_VIEW
     WHERE PROCESS IS NOT NULL
     ORDER BY PROCESS, PROJECT, MASK
@@ -17,7 +17,7 @@ SQL_LIST_ALL = """
 """
 
 SQL_LIST_BY_PROCESS = """
-    SELECT DISTINCT PROCESS, PROJECT, PROJECT_NAME, MASK, IS_GOLDEN
+    SELECT DISTINCT PROCESS, PROJECT, PROJECT_NAME, MASK, DK_GDS, HSPICE, LVS, PEX, IS_GOLDEN
     FROM antsdb.PAVE_PDK_VERSION_VIEW
     WHERE PROCESS = '{process}'
     ORDER BY PROJECT, MASK
@@ -25,7 +25,7 @@ SQL_LIST_BY_PROCESS = """
 """
 
 SQL_LIST_BY_PROJECT = """
-    SELECT DISTINCT PROCESS, PROJECT, PROJECT_NAME, MASK, IS_GOLDEN
+    SELECT DISTINCT PROCESS, PROJECT, PROJECT_NAME, MASK, DK_GDS, HSPICE, LVS, PEX, IS_GOLDEN
     FROM antsdb.PAVE_PDK_VERSION_VIEW
     WHERE PROJECT = '{project}'
     ORDER BY MASK
@@ -33,7 +33,7 @@ SQL_LIST_BY_PROJECT = """
 """
 
 SQL_LIST_BY_PROJECT_NAME = """
-    SELECT DISTINCT PROCESS, PROJECT, PROJECT_NAME, MASK, IS_GOLDEN
+    SELECT DISTINCT PROCESS, PROJECT, PROJECT_NAME, MASK, DK_GDS, HSPICE, LVS, PEX, IS_GOLDEN
     FROM antsdb.PAVE_PDK_VERSION_VIEW
     WHERE PROJECT_NAME = '{project_name}'
     ORDER BY MASK
@@ -60,13 +60,19 @@ def _build_text(rows: list[dict]) -> tuple[str, list[dict]]:
         for e in entries:
             golden_mark = " [Golden]" if e.get("IS_GOLDEN") else ""
             lines.append(
-                f"  - {e['PROJECT_NAME']} ({e['PROJECT']}) / MASK={e['MASK']}{golden_mark}"
+                f"  - {e['PROJECT_NAME']} ({e['PROJECT']}) / MASK={e['MASK']}"
+                f" / DK_GDS={e.get('DK_GDS', '')} / HSPICE={e.get('HSPICE', '')}"
+                f" / LVS={e.get('LVS', '')} / PEX={e.get('PEX', '')}{golden_mark}"
             )
             table_rows.append([
                 process,
                 e["PROJECT"],
                 e["PROJECT_NAME"],
                 e["MASK"],
+                e.get("DK_GDS", ""),
+                e.get("HSPICE", ""),
+                e.get("LVS", ""),
+                e.get("PEX", ""),
                 "Y" if e.get("IS_GOLDEN") else "N",
             ])
         lines.append("")
@@ -74,7 +80,7 @@ def _build_text(rows: list[dict]) -> tuple[str, list[dict]]:
     text = "\n".join(lines).strip()
     data_table = {
         "title": "가용 PDK 목록",
-        "headers": ["PROCESS", "PROJECT", "PROJECT_NAME", "MASK", "IS_GOLDEN"],
+        "headers": ["PROCESS", "PROJECT", "PROJECT_NAME", "MASK", "DK_GDS", "HSPICE", "LVS", "PEX", "IS_GOLDEN"],
         "rows": table_rows,
     }
     return text, [data_table]
