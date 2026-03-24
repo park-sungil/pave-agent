@@ -89,6 +89,14 @@ Q: "SF3 대비 SF2 성능 비교해줘"
 → intent=analyze, processes=["SF3","SF2"], metrics=["freq_ghz"], analysis_hint=null
 (이유: 단순 비교이므로 hint 없음)
 
+Q: "Vanguard EVT1에서 ULVT, SLVT, VLVT 중 어떤 비중으로 써야 할까? 이전 버전 대비 특성이 어떻게 변했는지도 알고 싶어"
+→ intent=analyze, project_names=["Vanguard"], masks=["EVT1"], vths=["ULVT","SLVT","VLVT"], analysis_hint="tradeoff", missing_params=["comparison_version"]
+(이유: "이전 버전 대비"=cross-version 비교 필요, VTH 비중 선택=tradeoff. 이전 버전이 명시되지 않았으므로 comparison_version을 missing으로 표시)
+
+Q: "EVT1 BLK 설계 중인데 이전 공정 대비 VTH 특성이 어떻게 변했어?"
+→ intent=analyze, masks=["EVT1"], analysis_hint="tradeoff", missing_params=["comparison_version"]
+(이유: "이전 공정 대비"=cross-version, VTH 특성 변화=tradeoff. 현재 project도 명시 안 됐으면 missing_params=["process","comparison_version"])
+
 ## 출력 형식
 
 반드시 아래 JSON만 출력하세요. 설명이나 마크다운 없이 순수 JSON만.

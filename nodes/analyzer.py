@@ -18,6 +18,15 @@ CONDITION_COLS = ["CELL", "DS", "VTH", "CORNER", "TEMP", "VDD", "CH", "WNS"]
 # log 변환 대상 (exponential 분포)
 LOG_METRICS = {"S_POWER", "IDDQ_NA"}
 
+# VTH 정렬 순서 (낮은 threshold → 높은 threshold, 즉 빠름 → 느림)
+# 새 VTH 타입 추가 시 여기에만 삽입
+VTH_ORDER = ["ULVT", "SLVT", "VLVT", "LVT", "MVT", "RVT", "HVT"]
+
+
+def _vth_sort_key(v: str) -> int:
+    """VTH 정렬 키: VTH_ORDER 인덱스, 미등록이면 뒤로"""
+    return VTH_ORDER.index(v.upper()) if v.upper() in VTH_ORDER else len(VTH_ORDER)
+
 
 # ──────────────────────────────────────────────
 # 유틸리티
@@ -271,9 +280,20 @@ def _find_worst_case(df: pd.DataFrame, metrics: list[str]) -> AnalysisResult:
 
 def _calc_tradeoff(df: pd.DataFrame, axis: str,
                    metrics: list[str]) -> AnalysisResult:
-    """trade-off 분석 (소극적 권장용 데이터)"""
-    metrics = [m for m in metrics if m in df.columns] or _available_metrics(df)
-    axis_vals = sorted(df[axis].unique(), key=str)
+    """trade-off 분석 (소극적 권장용 데이터).
+
+    VTH 축일 때:
+    - 요청 metrics 무시, 가용 전체 metric 표시 (추가 질문 방지)
+    - VTH_ORDER 순서로 정렬
+    - 최고 VTH(가장 느린 쪽)를 기준으로 ratio 테이블 추가
+    """
+    # VTH 비교는 항상 전체 metric (요청 metric만 보면 정보 부족)
+    if axis == "VTH":
+        metrics = _available_metrics(df)
+        axis_vals = sorted(df[axis].unique(), key=_vth_sort_key)
+    else:
+        metrics = [m for m in metrics if m in df.columns] or _available_metrics(df)
+        axis_vals = sorted(df[axis].unique(), key=str)
 
     summary = []
     for v in axis_vals:
@@ -282,6 +302,18 @@ def _calc_tradeoff(df: pd.DataFrame, axis: str,
         for m in metrics:
             row[m] = round(float(subset[m].mean()), 6)
         summary.append(row)
+
+    # ratio 테이블: 최고 VTH(마지막)를 기준으로 각 VTH의 상대값
+    ratio_table: list[dict[str, Any]] = []
+    if axis == "VTH" and len(summary) >= 2:
+        ref = summary[-1]  # 가장 높은 VTH = 기준
+        ref_label = str(ref[axis])
+        for row in summary:
+            ratio_row: dict[str, Any] = {axis: row[axis]}
+            for m in metrics:
+                ref_val = ref.get(m, 0)
+                ratio_row[m] = round(row[m] / ref_val, 4) if ref_val else None
+            ratio_table.append(ratio_row)
 
     # 비교 findings
     findings = []
@@ -298,16 +330,21 @@ def _calc_tradeoff(df: pd.DataFrame, axis: str,
                     "delta_pct": delta,
                 })
 
+    chart_data: dict[str, Any] = {
+        "type": "grouped_bar",
+        "axis": axis,
+        "groups": [str(v) for v in axis_vals],
+        "metrics": metrics,
+    }
+    if ratio_table:
+        chart_data["ratio_table"] = ratio_table
+        chart_data["ratio_reference"] = str(summary[-1][axis])
+
     return AnalysisResult(
         mode="tradeoff",
         summary_table=summary,
         findings=findings,
-        chart_data={
-            "type": "grouped_bar",
-            "axis": axis,
-            "groups": [str(v) for v in axis_vals],
-            "metrics": metrics,
-        },
+        chart_data=chart_data,
         raw_for_avg=None,
     )
 
