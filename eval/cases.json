@@ -309,5 +309,51 @@
     "expected": {
       "intent": "list"
     }
+  },
+  {
+    "id": "IP-25",
+    "question": "DB에 있는 버전 전부 알려줘",
+    "expected": {
+      "intent": "list"
+    }
+  },
+  {
+    "id": "IP-26",
+    "question": "어떤 PDK 버전 쓸 수 있어?",
+    "expected": {
+      "intent": "list"
+    }
+  },
+  {
+    "id": "IP-27",
+    "question": "SF2P 버전 뭐뭐 있어?",
+    "expected": {
+      "intent": "list",
+      "processes": ["SF2P"]
+    }
+  },
+  {
+    "id": "IP-28",
+    "question": "SF2랑 SF2P 버전 각각 뭐가 있어?",
+    "expected": {
+      "intent": "list",
+      "processes": ["SF2", "SF2P"]
+    }
+  },
+  {
+    "id": "IP-29",
+    "question": "등록된 PDK 목록 보여줘",
+    "expected": {
+      "intent": "list"
+    }
+  },
+  {
+    "id": "IP-30",
+    "question": "최신 SF3 버전이 뭐야?",
+    "expected": {
+      "intent": "list",
+      "processes": ["SF3"]
+    },
+    "note": "최신 버전 조회 — list로 분류 후 pdk_resolver에서 정렬"
   }
 ]
