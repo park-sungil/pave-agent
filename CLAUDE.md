@@ -16,6 +16,8 @@ intent_parser (LLM-light)
     │                → analyzer → interpreter (LLM-heavy)
     │                → visualizer → response_formatter (LLM-light)
     │
+    ├── list → response_formatter (코드 기반, LLM 없음)
+    │
     └── fallback → fallback_agent (ReAct, LLM-heavy)
                  → visualizer → response_formatter (LLM-light)
 ```
@@ -52,6 +54,7 @@ intent_parser (LLM-light)
 | `config.py` + `.env` | 설정 (API 키, DB 접속, 모델명) |
 | `shared/llm.py` | LLM 인스턴스 관리 (heavy/light 2-tier) |
 | `shared/db.py` | DB 연결 (Oracle) |
+| `shared/pdk_cache.py` | PDK 카탈로그 캐시 (앱 기동 시 1회 로드) |
 | `api/routes.py` | FastAPI 엔드포인트 (/analyze, /clarify) |
 | `chat.py` | 디버깅용 CLI |
 
