@@ -7,10 +7,11 @@ from shared.db import execute_query
 logger = logging.getLogger(__name__)
 
 _SQL = """
-    SELECT DISTINCT PROCESS, PROJECT, PROJECT_NAME, MASK, DK_GDS, HSPICE, LVS, PEX
+    SELECT PDK_ID, PROCESS, PROJECT, PROJECT_NAME, MASK,
+           DK_GDS, HSPICE, LVS, PEX, IS_GOLDEN, VDD_NOMINAL
     FROM antsdb.PAVE_PDK_VERSION_VIEW
     WHERE PROCESS IS NOT NULL
-    ORDER BY PROCESS, PROJECT, MASK
+    ORDER BY PROCESS, PROJECT, MASK, IS_GOLDEN DESC
 """
 
 _cache: list[dict] = []
