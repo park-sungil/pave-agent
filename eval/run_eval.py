@@ -71,9 +71,15 @@ def _check_hint(expected: dict, entities: dict) -> tuple[bool, str]:
     if "hint" not in expected:
         return True, ""
     actual = entities.get("analysis_hint")
-    if expected["hint"] == actual:
+    exp = expected["hint"]
+    # 복수 정답 허용 (리스트)
+    if isinstance(exp, list):
+        if actual in exp:
+            return True, ""
+        return False, f"hint: {actual} (expected one of: {exp})"
+    if exp == actual:
         return True, ""
-    return False, f"hint: {actual} (expected: {expected['hint']})"
+    return False, f"hint: {actual} (expected: {exp})"
 
 
 def evaluate_case(case: dict) -> dict:

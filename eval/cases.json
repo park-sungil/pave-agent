@@ -355,5 +355,212 @@
       "processes": ["SF3"]
     },
     "note": "최신 버전 조회 — list로 분류 후 pdk_resolver에서 정렬"
+  },
+
+  {
+    "id": "IP-31",
+    "question": "iddq 증가폭 대비 주파수 이득이 가장 큰 sweet spot 전압 구간은 어디야?",
+    "expected": {
+      "intent": "analyze",
+      "metrics_contains": ["freq_ghz", "iddq_na"],
+      "missing_contains": ["process"],
+      "hint": "optimization"
+    }
+  },
+  {
+    "id": "IP-32",
+    "question": "성능을 유지하면서 누설 전류를 가장 적게 쓰는 flavor 및 vdd 조합은 뭐야?",
+    "expected": {
+      "intent": "analyze",
+      "metrics_contains": ["freq_ghz", "s_power"],
+      "missing_contains": ["process"],
+      "hint": "optimization"
+    }
+  },
+  {
+    "id": "IP-33",
+    "question": "leakage 대비 성능이 가장 효율적인 전압은?",
+    "expected": {
+      "intent": "analyze",
+      "missing_contains": ["process"],
+      "hint": "optimization"
+    },
+    "note": "단축 표현 — 'leakage 대비 성능'도 optimization 트리거"
+  },
+  {
+    "id": "IP-34",
+    "question": "freq/iddq ratio가 최대가 되는 VDD 찾아줘",
+    "expected": {
+      "intent": "analyze",
+      "metrics_contains": ["freq_ghz", "iddq_na"],
+      "missing_contains": ["process"],
+      "hint": "optimization"
+    }
+  },
+  {
+    "id": "IP-35",
+    "question": "가장 효율적인 VTH와 VDD 조합을 알려줘",
+    "expected": {
+      "intent": "analyze",
+      "missing_contains": ["process"],
+      "hint": "optimization"
+    }
+  },
+
+  {
+    "id": "IP-36",
+    "question": "2nm와 3nm 노드 간의 동일 전압(0.7V) 대비 freq 향상률과 iddq 증가율을 비교해줘",
+    "expected": {
+      "intent": "analyze",
+      "processes": ["2nm", "3nm"],
+      "metrics_contains": ["freq_ghz", "iddq_na"]
+    },
+    "note": "노드 별칭 — pdk_resolver가 NODE_ALIASES로 SF2/SF3 매핑"
+  },
+  {
+    "id": "IP-37",
+    "question": "N2 공정 대비 N3 공정 성능 차이",
+    "expected": {
+      "intent": "analyze",
+      "processes": ["N2", "N3"],
+      "metrics_contains": ["freq_ghz"]
+    },
+    "note": "N2/N3 별칭도 NODE_ALIASES 매핑 대상"
+  },
+  {
+    "id": "IP-38",
+    "question": "SF3에서 SF2로 migration 시 PPA 이득은?",
+    "expected": {
+      "intent": "analyze",
+      "processes": ["SF3", "SF2"],
+      "metrics_contains": ["freq_ghz"]
+    },
+    "note": "'migration' 키워드 포함 — 단순 비교(null hint)로 처리"
+  },
+  {
+    "id": "IP-39",
+    "question": "이전 노드 대비 성능이 얼마나 좋아졌어?",
+    "expected": {
+      "intent": "analyze",
+      "missing_contains": ["process"]
+    },
+    "note": "'이전 노드' 모호 표현 — process missing으로 처리, interrupt 유도"
+  },
+  {
+    "id": "IP-40",
+    "question": "3nm → 2nm로 가면 SSPG 코너에서 freq 얼마나 좋아져?",
+    "expected": {
+      "intent": "analyze",
+      "processes": ["3nm", "2nm"],
+      "metrics_contains": ["freq_ghz"]
+    }
+  },
+
+  {
+    "id": "IP-41",
+    "question": "LVT 성능이 떨어지는건 Reff나 Ceff 중 어떤 영향이야?",
+    "expected": {
+      "intent": "analyze",
+      "vths": ["LVT"],
+      "metrics_contains": ["freq_ghz", "acreff_kohm", "acceff_ff"],
+      "missing_contains": ["process"],
+      "hint": "correlation"
+    }
+  },
+  {
+    "id": "IP-42",
+    "question": "저항이랑 커패시턴스 중 뭐가 주파수에 더 영향을 줘?",
+    "expected": {
+      "intent": "analyze",
+      "metrics_contains": ["freq_ghz", "acreff_kohm", "acceff_ff"],
+      "missing_contains": ["process"],
+      "hint": "correlation"
+    }
+  },
+  {
+    "id": "IP-43",
+    "question": "acreff_kohm이랑 acceff_ff 중 freq_ghz에 더 영향 주는 건?",
+    "expected": {
+      "intent": "analyze",
+      "metrics_contains": ["freq_ghz", "acreff_kohm", "acceff_ff"],
+      "missing_contains": ["process"],
+      "hint": "correlation"
+    }
+  },
+
+  {
+    "id": "IP-44",
+    "question": "전압 바꾸면 주파수가 어떻게 달라져?",
+    "expected": {
+      "intent": "analyze",
+      "metrics_contains": ["freq_ghz"],
+      "missing_contains": ["process"],
+      "hint": "sensitivity"
+    },
+    "note": "IP-11의 paraphrase — 'VDD 올리면' 없이도 sensitivity 판단"
+  },
+  {
+    "id": "IP-45",
+    "question": "어떤 corner에서 가장 빠른 freq가 나와?",
+    "expected": {
+      "intent": "analyze",
+      "metrics_contains": ["freq_ghz"],
+      "missing_contains": ["process"],
+      "hint": "worst_case"
+    },
+    "note": "'가장 빠른' = worst_case (반대 방향이지만 극단값 탐색)"
+  },
+  {
+    "id": "IP-46",
+    "question": "ULVT, SLVT, LVT, RVT 중에 설계에 뭐가 제일 적합해?",
+    "expected": {
+      "intent": "analyze",
+      "vths": ["ULVT", "SLVT", "LVT", "RVT"],
+      "missing_contains": ["process"],
+      "hint": "tradeoff"
+    },
+    "note": "'적합해' = tradeoff 트리거"
+  },
+  {
+    "id": "IP-47",
+    "question": "VDD 내리면 leakage가 얼마나 줄어?",
+    "expected": {
+      "intent": "analyze",
+      "metrics_contains": ["s_power"],
+      "missing_contains": ["process"],
+      "hint": "sensitivity"
+    },
+    "note": "'내리면'도 '올리면'과 동일하게 sensitivity 처리"
+  },
+  {
+    "id": "IP-48",
+    "question": "SF3 SSPG 코너에서 worst 조건 알려줘",
+    "expected": {
+      "intent": "analyze",
+      "processes": ["SF3"],
+      "hint": "worst_case"
+    }
+  },
+  {
+    "id": "IP-49",
+    "question": "guardband 확인하고 싶어, SSPG 0.95V 125도에서 데이터 뽑아줘",
+    "expected": {
+      "intent": "analyze",
+      "metrics_contains": ["freq_ghz"],
+      "missing_contains": ["process"],
+      "hint": "profile"
+    },
+    "note": "'guardband' 키워드 — 특정 PVT 조건 조회 = profile"
+  },
+  {
+    "id": "IP-50",
+    "question": "power vs performance 트레이드오프 보여줘",
+    "expected": {
+      "intent": "analyze",
+      "metrics_contains": ["freq_ghz", "s_power"],
+      "missing_contains": ["process"],
+      "hint": ["tradeoff", "optimization"]
+    },
+    "note": "복수 정답 허용: tradeoff 또는 optimization 모두 합리적"
   }
 ]
