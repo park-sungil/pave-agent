@@ -25,7 +25,6 @@ from nodes.interpreter import interpreter
 from nodes.visualizer import visualizer
 from nodes.response_formatter import response_formatter
 from nodes.fallback_agent import fallback_agent
-from nodes.pdk_lister import pdk_lister
 
 RESULTS_DIR = Path(__file__).parent / "results"
 
@@ -110,6 +109,60 @@ E2E_CASES = [
             "route": "list",
         },
     },
+    # P1: optimization — sweet spot (Thetis = single project, 자동 특정)
+    {
+        "id": "E2E-10",
+        "question": "Thetis에서 iddq 대비 freq 이득이 가장 큰 전압 구간은?",
+        "checks": {
+            "has_response": True,
+            "route": "distributed",
+            "analysis_mode": "optimization",
+            "has_charts": True,
+        },
+    },
+    # P1: optimization — multi-axis (VTH × VDD)
+    {
+        "id": "E2E-11",
+        "question": "Thetis에서 성능 유지하면서 누설 전류 적은 Vth+VDD 조합은?",
+        "checks": {
+            "has_response": True,
+            "route": "distributed",
+            "analysis_mode": "optimization",
+        },
+    },
+    # P2: cross-process delta (프로세스명 라벨 포함 확인)
+    {
+        "id": "E2E-12",
+        "question": "SF3 대비 SF2 freq와 iddq 비교해줘",
+        "checks": {
+            "has_response": True,
+            "route": "distributed",
+            "analysis_mode": "compare",
+        },
+        "note": "interrupt 발생 가능 (PDK 선택) — 수동 확인 필요",
+        "may_interrupt": True,
+    },
+    # P3: parasitic attribution
+    {
+        "id": "E2E-13",
+        "question": "Thetis에서 LVT freq에 Reff랑 Ceff 중 어떤 게 더 영향이야?",
+        "checks": {
+            "has_response": True,
+            "route": "distributed",
+            "analysis_mode": "correlation",
+            "has_findings": True,
+        },
+    },
+    # worst case robustness: SSPG guardband
+    {
+        "id": "E2E-14",
+        "question": "Thetis SSPG 코너에서 최악 조건은?",
+        "checks": {
+            "has_response": True,
+            "route": "distributed",
+            "analysis_mode": "worst_case",
+        },
+    },
 ]
 
 
@@ -132,7 +185,7 @@ def _build_graph():
     builder.add_edge(START, "intent_parser")
     builder.add_conditional_edges("intent_parser", _route, {
         "distributed": "pdk_resolver",
-        "list": "pdk_lister",
+        "list": "response_formatter",
         "fallback": "fallback_agent",
     })
     builder.add_edge("pdk_resolver", "query_builder")
@@ -141,7 +194,6 @@ def _build_graph():
     builder.add_edge("analyzer", "interpreter")
     builder.add_edge("interpreter", "visualizer")
     builder.add_edge("fallback_agent", "visualizer")
-    builder.add_edge("pdk_lister", "visualizer")
     builder.add_edge("visualizer", "response_formatter")
     builder.add_edge("response_formatter", END)
 
@@ -211,6 +263,12 @@ def run_case(graph, case: dict, idx: int) -> dict:
         if not charts:
             errors.append("차트 없음")
 
+    # 체크: has_findings
+    if checks.get("has_findings") and vals.get("analysis_result"):
+        findings = vals["analysis_result"].get("findings", [])
+        if not findings:
+            errors.append("findings 없음")
+
     # 요약 수집
     summary = {
         "route": vals.get("route"),
@@ -241,6 +299,10 @@ def main():
 
     for i, case in enumerate(E2E_CASES):
         if filter_ids and case["id"] not in filter_ids:
+            continue
+        # interrupt 예상 케이스는 자동 실행 skip (수동 테스트)
+        if case.get("may_interrupt") and not filter_ids:
+            print(f"[SKIP] {case['id']}: {case['question'][:45]} (수동 테스트 필요)")
             continue
 
         r = run_case(graph, case, i)
