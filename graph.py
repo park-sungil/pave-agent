@@ -19,6 +19,16 @@ def _route_after_intent(state: PaveAgentState) -> str:
     return state.get("route", "distributed")
 
 
+def _route_after_pdk_resolver(state: PaveAgentState) -> str:
+    """pdk_resolver 후 분기: 에러 발생 시 response_formatter로 단락"""
+    return "response_formatter" if state.get("error") else "query_builder"
+
+
+def _route_after_data_executor(state: PaveAgentState) -> str:
+    """data_executor 후 분기: 에러 발생 시 response_formatter로 단락"""
+    return "response_formatter" if state.get("error") else "analyzer"
+
+
 def build_graph(checkpointer=None):
     """LangGraph 그래프 빌드
 
@@ -55,10 +65,16 @@ def build_graph(checkpointer=None):
         },
     )
 
-    # 분산 파이프라인 엣지
-    builder.add_edge("pdk_resolver", "query_builder")
+    # 분산 파이프라인 엣지 (에러 발생 시 response_formatter로 단락)
+    builder.add_conditional_edges(
+        "pdk_resolver", _route_after_pdk_resolver,
+        {"query_builder": "query_builder", "response_formatter": "response_formatter"},
+    )
     builder.add_edge("query_builder", "data_executor")
-    builder.add_edge("data_executor", "analyzer")
+    builder.add_conditional_edges(
+        "data_executor", _route_after_data_executor,
+        {"analyzer": "analyzer", "response_formatter": "response_formatter"},
+    )
     builder.add_edge("analyzer", "interpreter")
     builder.add_edge("interpreter", "visualizer")
 

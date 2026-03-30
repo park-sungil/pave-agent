@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import sys
+import time
+import traceback
 import uuid
 
 from langgraph.checkpoint.memory import MemorySaver
@@ -10,6 +12,7 @@ from prompt_toolkit.history import InMemoryHistory
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
+from rich.syntax import Syntax
 from rich.table import Table
 from rich.theme import Theme
 from rich import box
@@ -28,6 +31,9 @@ _THEME = Theme({
     "header":  "bold white",
     "default": "dim white",
     "info":    "dim white",
+    "timing":  "dim cyan",
+    "sql":     "dim yellow",
+    "sample":  "dim green",
 })
 console = Console(theme=_THEME, highlight=False)
 
@@ -47,7 +53,7 @@ _NODE_DEBUG_KEYS: dict[str, list[str]] = {
 
 
 def _fmt_value(key: str, val) -> str:
-    """state 값을 간결하게 포맷"""
+    """state 값을 간결하게 포맷 (debug 요약용)"""
     if val is None:
         return "None"
 
@@ -55,7 +61,11 @@ def _fmt_value(key: str, val) -> str:
         intent = val.get("intent", "?")
         entities = val.get("entities", {})
         missing = val.get("missing_params", [])
-        parts = [f"intent={intent}", f"entities={entities}"]
+        hint = entities.get("analysis_hint")
+        parts = [f"intent={intent}"]
+        if hint:
+            parts.append(f"hint={hint}")
+        parts.append(f"entities={entities}")
         if missing:
             parts.append(f"missing={missing}")
         return ", ".join(parts)
@@ -64,8 +74,11 @@ def _fmt_value(key: str, val) -> str:
         pdks = val.get("target_pdks", [])
         mode = val.get("comparison_mode", "?")
         defaults = val.get("applied_defaults", {})
+        params = val.get("resolved_params", {})
         pdk_names = [f"{p.get('project_name','?')}(id={p.get('pdk_id','?')})" for p in pdks]
         parts = [f"mode={mode}", f"pdks={pdk_names}"]
+        if params:
+            parts.append(f"params={params}")
         if defaults:
             parts.append(f"defaults={defaults}")
         return ", ".join(parts)
@@ -73,12 +86,16 @@ def _fmt_value(key: str, val) -> str:
     if key == "query_plan":
         queries = val.get("queries", [])
         is_bulk = val.get("is_bulk", False)
-        return f"queries={len(queries)}개, is_bulk={is_bulk}"
+        purposes = [q.get("purpose", "?") for q in queries]
+        return f"queries={len(queries)}개 {purposes}, is_bulk={is_bulk}"
 
     if key == "query_result":
         total = val.get("total_rows", 0)
+        per_pdk = {str(k): v for k, v in val.get("rows_per_pdk", {}).items()}
         warnings = val.get("warnings", [])
         parts = [f"total_rows={total}"]
+        if per_pdk:
+            parts.append(f"per_pdk={per_pdk}")
         if warnings:
             parts.append(f"warnings={warnings}")
         return ", ".join(parts)
@@ -93,8 +110,8 @@ def _fmt_value(key: str, val) -> str:
         insights = val.get("key_insights", [])
         recs = val.get("recommendations", [])
         charts = val.get("suggested_charts", [])
-        preview = insights[0][:60] + "…" if insights else "(없음)"
-        return f"insights={len(insights)}개, recs={len(recs)}개, charts={len(charts)}개 | 첫번째: {preview}"
+        preview = insights[0][:80] + "…" if insights else "(없음)"
+        return f"insights={len(insights)}개, recs={len(recs)}개, charts={len(charts)}개 | {preview}"
 
     if key == "chart_specs":
         if isinstance(val, list):
@@ -103,7 +120,7 @@ def _fmt_value(key: str, val) -> str:
         return str(val)
 
     if key == "final_response":
-        text_preview = (val.get("text", "") or "")[:80].replace("\n", " ")
+        text_preview = (val.get("text", "") or "")[:100].replace("\n", " ")
         tables = val.get("data_tables", [])
         charts = val.get("charts", [])
         return f"tables={len(tables)}개, charts={len(charts)}개 | {text_preview}…"
@@ -116,25 +133,120 @@ def _fmt_value(key: str, val) -> str:
     return str(val)[:120]
 
 
-def _print_node_debug(chunk: dict) -> None:
+def _print_verbose_extras(node_name: str, node_output: dict) -> None:
+    """--verbose 시 노드별 심층 정보 추가 출력"""
+
+    if node_name == "query_builder":
+        queries = (node_output.get("query_plan") or {}).get("queries", [])
+        for i, q in enumerate(queries, 1):
+            sql = q.get("sql", "")
+            purpose = q.get("purpose", "")
+            if sql:
+                console.print(f"  [sql]▸ SQL #{i} — {purpose}[/sql]")
+                console.print(Syntax(sql, "sql", theme="monokai", word_wrap=True,
+                                     background_color="default"))
+
+    elif node_name == "data_executor":
+        result = node_output.get("query_result") or {}
+        rows_per_pdk = result.get("rows_per_pdk", {})
+        for pdk_id, rows in rows_per_pdk.items():
+            sample = rows[:3]  # 최대 3행
+            if sample and isinstance(sample[0], dict):
+                cols = list(sample[0].keys())
+                tbl = Table(
+                    title=f"[sample]PDK {pdk_id} 샘플 ({len(rows)}행 중 최대 3행)[/sample]",
+                    box=box.MINIMAL,
+                    header_style="dim green",
+                    show_lines=False,
+                    expand=False,
+                )
+                for c in cols:
+                    tbl.add_column(c, max_width=14, overflow="fold")
+                for row in sample:
+                    tbl.add_row(*[str(row.get(c, "")) for c in cols])
+                console.print(tbl)
+
+    elif node_name == "analyzer":
+        result = node_output.get("analysis_result") or {}
+        findings = result.get("findings", [])
+        if findings:
+            console.print("  [key]findings:[/key]")
+            for f in findings:
+                console.print(f"    [val]• {f}[/val]")
+        summary = result.get("summary_table", [])
+        if summary and isinstance(summary[0], dict):
+            cols = list(summary[0].keys())
+            tbl = Table(
+                title="summary_table",
+                box=box.MINIMAL,
+                header_style="dim white",
+                show_lines=False,
+                expand=False,
+            )
+            for c in cols:
+                tbl.add_column(c, max_width=18, overflow="fold")
+            for row in summary[:10]:
+                tbl.add_row(*[str(row.get(c, "")) for c in cols])
+            console.print(tbl)
+
+    elif node_name == "interpreter":
+        interp = node_output.get("interpretation") or {}
+        narrative = interp.get("narrative", "")
+        if narrative:
+            console.print("  [key]narrative (전체):[/key]")
+            console.print(Panel(narrative, border_style="dim", expand=False, padding=(0, 1)))
+        recs = interp.get("recommendations", [])
+        if recs:
+            console.print("  [key]recommendations:[/key]")
+            for r in recs:
+                console.print(f"    [val]• {r}[/val]")
+
+    elif node_name == "pdk_resolver":
+        resolution = node_output.get("pdk_resolution") or {}
+        pdks = resolution.get("target_pdks", [])
+        if pdks:
+            tbl = Table(
+                title="target_pdks",
+                box=box.MINIMAL,
+                header_style="dim white",
+                show_lines=False,
+                expand=False,
+            )
+            for col in ["pdk_id", "process", "project_name", "mask", "dk_gds", "vdd_nominal"]:
+                tbl.add_column(col, max_width=18, overflow="fold")
+            for p in pdks:
+                tbl.add_row(*[str(p.get(c, "")) for c in ["pdk_id", "process", "project_name", "mask", "dk_gds", "vdd_nominal"]])
+            console.print(tbl)
+
+
+def _print_node_debug(chunk: dict, verbose: bool, elapsed: float | None = None) -> None:
     """stream chunk(노드 업데이트) 디버그 출력"""
     for node_name, node_output in chunk.items():
         lines = []
+        if elapsed is not None:
+            lines.append(f"[timing]{elapsed:.2f}s[/timing]")
+
         if not isinstance(node_output, dict):
             lines.append(str(node_output))
         else:
             keys = _NODE_DEBUG_KEYS.get(node_name, list(node_output.keys()))
             for key in keys:
                 if key in node_output:
-                    lines.append(f"[key]{key}:[/key] [val]{_fmt_value(key, node_output[key])}[/val]")
+                    lines.append(
+                        f"[key]{key}:[/key] [val]{_fmt_value(key, node_output[key])}[/val]"
+                    )
             if "error" in node_output and node_output["error"]:
                 lines.append(f"[error]error: {node_output['error']}[/error]")
+
         console.print(Panel(
             "\n".join(lines) if lines else "(출력 없음)",
             title=f"[node]{node_name}[/node]",
             border_style="white",
             expand=False,
         ))
+
+        if verbose and isinstance(node_output, dict):
+            _print_verbose_extras(node_name, node_output)
 
 
 def _print_data_table(dt: dict) -> None:
@@ -152,11 +264,16 @@ def _print_data_table(dt: dict) -> None:
     console.print(table)
 
 
-def _stream_run(graph, state_or_cmd, config, debug: bool) -> None:
+def _stream_run(graph, state_or_cmd, config, debug: bool, verbose: bool) -> None:
     """graph.stream()으로 실행. debug=True 시 노드 진행상황 출력"""
+    t0 = time.monotonic()
+    prev_t = t0
     for chunk in graph.stream(state_or_cmd, config, stream_mode="updates"):
+        now = time.monotonic()
+        elapsed = now - prev_t
+        prev_t = now
         if debug:
-            _print_node_debug(chunk)
+            _print_node_debug(chunk, verbose, elapsed=elapsed)
 
 
 _input_history = InMemoryHistory()
@@ -171,16 +288,20 @@ def main():
     """디버깅용 대화형 CLI (interrupt 지원)
 
     사용법:
-        python chat.py           # 일반 모드
-        python chat.py --debug   # 노드 흐름 + state 출력
+        python chat.py              # 일반 모드
+        python chat.py --debug      # 노드 흐름 + state 요약 출력
+        python chat.py --verbose    # --debug + SQL/데이터샘플/findings 전체 출력
     """
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
 
-    debug = "--debug" in sys.argv
+    verbose = "--verbose" in sys.argv
+    debug = verbose or "--debug" in sys.argv
 
     console.rule("[header]pave-agent v8 CLI[/header]")
-    if debug:
+    if verbose:
+        console.print("[warn][VERBOSE MODE] SQL · 데이터샘플 · findings 전체 출력 활성화[/warn]")
+    elif debug:
         console.print("[warn][DEBUG MODE] 노드 흐름 출력 활성화[/warn]")
     console.print("[info]종료: quit / exit[/info]\n")
 
@@ -215,7 +336,7 @@ def main():
         }
 
         try:
-            _stream_run(graph, state, config, debug)
+            _stream_run(graph, state, config, debug, verbose)
 
             # interrupt 처리 루프
             while True:
@@ -261,7 +382,7 @@ def main():
                 if not answer:
                     break
 
-                _stream_run(graph, Command(resume=answer), config, debug)
+                _stream_run(graph, Command(resume=answer), config, debug, verbose)
 
             # 최종 결과 출력
             final = graph.get_state(config).values
@@ -284,12 +405,22 @@ def main():
                     console.print(f"[info]차트 {len(resp['charts'])}개 생성됨[/info]")
             else:
                 console.print("[warn]응답 없음[/warn]")
+                if debug:
+                    # debug 모드: 최종 state 덤프
+                    console.print("[warn]최종 state 키:[/warn]")
+                    for k, v in final.items():
+                        if v is not None:
+                            console.print(f"  [key]{k}:[/key] [val]{str(v)[:120]}[/val]")
             console.rule()
 
             history.append({"question": question, "summary": "..."})
 
         except Exception as e:
-            console.print(Panel(f"{type(e).__name__}: {e}", title="[error]EXCEPTION[/error]", border_style="red"))
+            console.print(Panel(
+                traceback.format_exc(),
+                title=f"[error]EXCEPTION: {type(e).__name__}[/error]",
+                border_style="red",
+            ))
 
 
 if __name__ == "__main__":
