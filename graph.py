@@ -29,6 +29,11 @@ def _route_after_data_executor(state: PaveAgentState) -> str:
     return "response_formatter" if state.get("error") else "analyzer"
 
 
+def _route_after_analyzer(state: PaveAgentState) -> str:
+    """analyzer 후 분기: 에러 발생 시 response_formatter로 단락"""
+    return "response_formatter" if state.get("error") else "interpreter"
+
+
 def build_graph(checkpointer=None):
     """LangGraph 그래프 빌드
 
@@ -75,7 +80,10 @@ def build_graph(checkpointer=None):
         "data_executor", _route_after_data_executor,
         {"analyzer": "analyzer", "response_formatter": "response_formatter"},
     )
-    builder.add_edge("analyzer", "interpreter")
+    builder.add_conditional_edges(
+        "analyzer", _route_after_analyzer,
+        {"interpreter": "interpreter", "response_formatter": "response_formatter"},
+    )
     builder.add_edge("interpreter", "visualizer")
 
     # fallback → visualizer
