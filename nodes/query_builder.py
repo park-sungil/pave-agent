@@ -145,7 +145,9 @@ def build_query(pdk_id: int, entities: dict, is_bulk: bool,
 def query_builder(state: PaveAgentState) -> dict:
     """SQL 동적 조립 (코드 기반)"""
     parsed = state["parsed_intent"]
-    resolution = state["pdk_resolution"]
+    resolution = state.get("pdk_resolution")
+    if not resolution:
+        return {"error": "PDK 정보가 없어 쿼리를 생성할 수 없습니다."}
     entities = parsed["entities"]
     intent = parsed["intent"]
     is_bulk = intent == "anomaly"

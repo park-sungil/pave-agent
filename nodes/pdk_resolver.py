@@ -352,13 +352,25 @@ def pdk_resolver(state: PaveAgentState) -> dict:
                 sources.append((None, None, pn))
 
         if not sources:
-            choice = _ask_user("어떤 공정에서 확인할까요?", [])
+            choice = _ask_user(
+                "어떤 공정에서 확인할까요? (예: SF3, SF2, Thetis, 2nm, 3nm)", []
+            )
             sources.append((choice.strip(), None, None))
 
         for proc, proj, pname in sources:
             pdk = _resolve_single_pdk(proc, proj, pname, mask_hint=mask_hint)
             if pdk:
                 target_pdks.append(pdk)
+            elif proc:
+                # DB에서 매칭 실패 시 재시도: 도움말 메시지와 함께
+                retry = _ask_user(
+                    f"'{proc}'에 해당하는 PDK를 찾을 수 없습니다. "
+                    "공정명을 다시 입력해주세요. (예: SF3, SF2P, Thetis)",
+                    [],
+                )
+                pdk2 = _resolve_single_pdk(retry.strip(), None, None, mask_hint=mask_hint)
+                if pdk2:
+                    target_pdks.append(pdk2)
 
         # comparison_version: 같은 project의 다른 버전 목록을 테이블로 제시
         if "comparison_version" in missing_params and len(target_pdks) == 1:
@@ -388,7 +400,13 @@ def pdk_resolver(state: PaveAgentState) -> dict:
                         target_pdks.append(_row_to_resolved_pdk(pdk_row))
 
     if not target_pdks:
-        return {"error": "PDK를 특정할 수 없습니다."}
+        return {
+            "error": (
+                "PDK를 특정할 수 없습니다. "
+                "공정명(예: SF3, SF2, SF2P) 또는 프로젝트명(예: Thetis)을 포함하여 "
+                "다시 질문해주세요."
+            )
+        }
 
     mode = "single" if len(target_pdks) == 1 else "pair" if len(target_pdks) == 2 else "multi"
 

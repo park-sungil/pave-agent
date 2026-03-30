@@ -238,7 +238,21 @@ def response_formatter(state: PaveAgentState) -> dict:
     """한국어 정제 + 응답 포맷팅 (LLM-light)
 
     list intent는 LLM 없이 available_pdks를 직접 포맷하여 반환.
+    에러 상태이면 LLM 없이 에러 메시지를 반환.
     """
+    # 에러 단락: 이전 노드에서 error가 set된 경우 LLM 없이 바로 응답
+    error = state.get("error")
+    if error:
+        return {
+            "final_response": FinalResponse(
+                text=f"요청을 처리할 수 없습니다.\n\n{error}",
+                data_tables=[],
+                charts=[],
+                applied_defaults={},
+                metadata={},
+            )
+        }
+
     intent = (state.get("parsed_intent") or {}).get("intent")
     if intent == "list":
         return {"final_response": _format_list(state)}
