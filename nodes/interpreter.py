@@ -43,8 +43,8 @@ SYSTEM_PROMPT = """\
 def _build_user_message(state: PaveAgentState, domain_knowledge: str) -> str:
     """interpreter에 전달할 사용자 메시지 구성"""
     parsed = state["parsed_intent"]
-    resolution = state["pdk_resolution"]
-    analysis = state["analysis_result"]
+    resolution = state.get("pdk_resolution") or {}
+    analysis = state.get("analysis_result") or {}
     entities = parsed["entities"]
 
     parts = []
@@ -131,7 +131,7 @@ def _parse_interpretation(text: str) -> dict | None:
 
 def _fallback_interpretation(state: PaveAgentState) -> Interpretation:
     """LLM 실패 시 분석 결과만으로 기본 해석 생성 (graceful degradation)"""
-    analysis = state["analysis_result"]
+    analysis = state.get("analysis_result") or {}
     findings = analysis.get("findings", [])
 
     narrative_parts = [f"분석 모드: {analysis['mode']}"]
@@ -161,7 +161,15 @@ def _fallback_interpretation(state: PaveAgentState) -> Interpretation:
 def interpreter(state: PaveAgentState) -> dict:
     """분석 결과 해석 (LLM-heavy)"""
     parsed = state["parsed_intent"]
-    resolution = state["pdk_resolution"]
+    resolution = state.get("pdk_resolution")
+    analysis = state.get("analysis_result")
+
+    # 선행 노드 실패 가드
+    if not resolution:
+        return {"error": "PDK 정보가 없어 해석을 수행할 수 없습니다."}
+    if not analysis:
+        return {"error": "분석 결과가 없어 해석을 수행할 수 없습니다."}
+
     entities = parsed["entities"]
     intent = parsed["intent"]
     pdk_count = len(resolution["target_pdks"])
