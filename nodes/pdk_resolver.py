@@ -50,6 +50,11 @@ CATALOG_SYSTEM_PROMPT = """\
 project_name 기준: {{"candidates": [{{"project_name": "Thetis"}}]}}
 정보 부족:   {{"candidates": [], "message": "어떤 공정에서 분석할까요?"}}
 목록에 없음: {{"candidates": [], "message": "'XXX'는 등록된 공정이 아닙니다. 아래 목록에서 선택해주세요."}}
+취소/새 질문: {{"action": "cancel", "candidates": []}}
+
+# 취소/새 질문 판단 기준
+- 공정 선택과 무관한 새로운 질문이 들어온 경우
+- 명시적으로 취소/중단 의사를 표현한 경우
 """
 
 
@@ -299,13 +304,19 @@ def pdk_resolver(state: PaveAgentState) -> dict:
 
     question = parsed["raw_question"]
 
-    # PDK 확정될 때까지 루프 (interrupt/resume으로 사용자와 대화)
+    # PDK 확정될 때까지 루프 — LLM이 취소/새 질문 여부도 판단
     while True:
         result = _llm_select_from_catalog(question, parsed["intent"], available_pdks)
+
+        # LLM이 취소/새 질문으로 판단 → 루프 탈출
+        if result.get("action") == "cancel":
+            return {"error": "PDK 선택이 취소되었습니다. 새 질문을 입력해주세요."}
+
         candidates = result.get("candidates") or []
         target_entries = _resolve_candidates(candidates, available_pdks, mask_hint)
         if target_entries:
             break
+
         msg = result.get("message") or "분석할 공정을 선택해주세요."
         question = _ask_user_catalog(msg, available_pdks)
 
