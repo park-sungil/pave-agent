@@ -57,6 +57,7 @@ def _num_list(values: list[int | float]) -> str:
 def build_query(pdk_id: int, entities: dict, is_bulk: bool,
                 applied_defaults: dict | None = None,
                 sensitivity_col: str | None = None,
+                optimization_axes: list[str] | None = None,
                 vdd_nominal: float | None = None) -> str:
     """entity 기반 SQL 동적 조립
 
@@ -64,9 +65,11 @@ def build_query(pdk_id: int, entities: dict, is_bulk: bool,
     - entity에 값이 있으면 → 그 값으로 WHERE
     - entity에 값이 없으면 → applied_defaults 기본값 적용
     - sensitivity_col이 지정되면 → 해당 축은 기본값 적용 안 함 (전체 조회)
+    - optimization_axes에 포함된 컬럼도 기본값 적용 안 함 (전체 sweep)
     - is_bulk=True면 → 기본값 적용 안 함 (전체 sweep)
     """
     applied_defaults = applied_defaults or {}
+    opt_axes = set(optimization_axes or [])
     select_cols = BASE_COLS + _resolve_metric_cols(entities.get("metrics"))
     where_clauses = [f"d.PDK_ID = {pdk_id}"]
 
@@ -75,6 +78,8 @@ def build_query(pdk_id: int, entities: dict, is_bulk: bool,
         if is_bulk:
             return False
         if sensitivity_col and col == sensitivity_col:
+            return False
+        if col in opt_axes:
             return False
         return True
 
@@ -147,6 +152,7 @@ def query_builder(state: PaveAgentState) -> dict:
 
     resolved_params = resolution.get("resolved_params") or {}
     sensitivity_col = resolved_params.get("sensitivity_col")
+    optimization_axes = resolved_params.get("optimization_axes")
     applied_defaults = resolution.get("applied_defaults") or {}
 
     queries = []
@@ -155,6 +161,7 @@ def query_builder(state: PaveAgentState) -> dict:
             pdk["pdk_id"], entities, is_bulk,
             applied_defaults=applied_defaults,
             sensitivity_col=sensitivity_col,
+            optimization_axes=optimization_axes,
             vdd_nominal=pdk.get("vdd_nominal"),
         )
         queries.append({

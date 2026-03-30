@@ -62,6 +62,7 @@ SYSTEM_PROMPT = """\
 | tradeoff | 선택지 비교, 소극적 권장 | "어떤 Vth?", "추천", "선택", "trade-off", "뭐가 좋" |
 | correlation | 두 지표 간 상관관계 | "상관관계", "관계가 있", "비례", "correlation", "사이에 관계" |
 | interpolation | 미실측 조건 추정 | "추정", "보간", "사이 값", "interpolation" |
+| optimization | 효율 최적점 탐색 (sweet spot, Pareto) | "sweet spot", "최적", "가장 효율적", "이득이 가장 큰", "efficiency", "최적 조합", "가장 좋은 조합", "ratio가 최대" |
 | null | 단순 비교/조회 (위 어디에도 해당 안 됨) | (특별한 키워드 없음) |
 
 ## Few-shot 예시
@@ -96,6 +97,22 @@ Q: "Vanguard EVT1에서 ULVT, SLVT, VLVT 중 어떤 비중으로 써야 할까? 
 Q: "EVT1 BLK 설계 중인데 이전 공정 대비 VTH 특성이 어떻게 변했어?"
 → intent=analyze, masks=["EVT1"], analysis_hint="tradeoff", missing_params=["comparison_version"]
 (이유: "이전 공정 대비"=cross-version, VTH 특성 변화=tradeoff. 현재 project도 명시 안 됐으면 missing_params=["process","comparison_version"])
+
+Q: "iddq 증가폭 대비 주파수 이득이 가장 큰 sweet spot 전압 구간은 어디야?"
+→ intent=analyze, metrics=["freq_ghz","iddq_na"], analysis_hint="optimization"
+(이유: "sweet spot"+"이득이 가장 큰"=최적점 탐색=optimization, 전압 구간 sweep 필요)
+
+Q: "성능을 유지하면서 누설 전류를 가장 적게 쓰는 flavor 및 vdd 조합은 뭐야?"
+→ intent=analyze, metrics=["freq_ghz","s_power"], analysis_hint="optimization"
+(이유: 두 지표를 동시에 최적화하는 조합 탐색=optimization, VTH×VDD multi-axis sweep 필요)
+
+Q: "2nm와 3nm 노드 간의 동일 전압(0.7V) 대비 freq 향상률과 iddq 증가율을 비교해줘"
+→ intent=analyze, processes=["2nm","3nm"], vdds=[0.7], metrics=["freq_ghz","iddq_na"], analysis_hint=null
+(이유: N vs N-1 단순 비교이므로 hint 없음. "2nm"/"3nm"는 노드 별칭으로 processes에 그대로 추출)
+
+Q: "LVT 성능이 떨어지는건 Reff나 Ceff 중 어떤 영향이야?"
+→ intent=analyze, vths=["LVT"], metrics=["freq_ghz","acreff_kohm","acceff_ff"], analysis_hint="correlation"
+(이유: 두 parasitic 파라미터 중 어느 것이 freq에 더 큰 영향인지=correlation+attribution)
 
 ## 출력 형식
 

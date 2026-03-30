@@ -77,6 +77,9 @@ def load_domain_sections(entities: dict, intent: str,
         needed.add("8")  # 쿼리 처리 규칙 (worst-case 매핑)
     if hint == "tradeoff":
         needed.add("3")
+    if hint == "optimization":
+        needed.add("3")  # PPA Trade-off (sweet spot 근거)
+        needed.add("6")  # 조건별 상관관계 (VDD 감도 포함)
 
     # 아무것도 해당 없으면 기본: 섹션 3
     if not needed:

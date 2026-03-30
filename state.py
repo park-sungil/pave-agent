@@ -7,7 +7,7 @@ IntentType = Literal["analyze", "trend", "anomaly", "list", "unknown"]
 
 AnalysisHint = Literal[
     "profile", "sensitivity", "worst_case", "tradeoff",
-    "correlation", "interpolation", None
+    "correlation", "interpolation", "optimization", None
 ]
 
 
@@ -120,3 +120,12 @@ class PaveAgentState(TypedDict):
 
     # anomaly SSE 진행상황
     anomaly_progress: Optional[dict[str, Any]]
+
+    # ──────────────────────────────────────────────
+    # Phase 2 확장 지점 (현재 미사용 — 구현 전까지 Optional 유지)
+    # - AnalysisHint에 "root_cause", "prediction" 등 새 Literal 값 추가
+    # - PaveAgentState에 아래와 같은 Optional 필드 추가:
+    #     reasoning_chain: Optional[list[dict[str, Any]]]   # 추론 단계
+    #     evidence_graph: Optional[dict[str, Any]]          # 원인-결과 그래프
+    # - graph.py에 route="deep_analysis" 분기 추가 (기존 엣지 변경 없이)
+    # ──────────────────────────────────────────────

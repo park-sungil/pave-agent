@@ -131,8 +131,13 @@ def _summarize(df: pd.DataFrame, metrics: list[str]) -> AnalysisResult:
     )
 
 
-def _calc_delta(df: pd.DataFrame, axis: str, metrics: list[str]) -> AnalysisResult:
-    """축별 변화율 계산 (PDK 비교 또는 VTH/DS/TEMP 등 비교)"""
+def _calc_delta(df: pd.DataFrame, axis: str, metrics: list[str],
+                pdk_labels: dict | None = None) -> AnalysisResult:
+    """축별 변화율 계산 (PDK 비교 또는 VTH/DS/TEMP 등 비교).
+
+    pdk_labels: {pdk_id: "SF3(900)"} 형태로 전달하면 PDK_ID 대신 공정명 표시.
+    axis==PDK_ID일 때 VTH별 breakdown 테이블도 생성.
+    """
     metrics = [m for m in metrics if m in df.columns] or _available_metrics(df)
     groups = df[axis].unique()
     if len(groups) < 2:
@@ -146,6 +151,15 @@ def _calc_delta(df: pd.DataFrame, axis: str, metrics: list[str]) -> AnalysisResu
     base_val, comp_val = groups[0], groups[1]
     base_df = df[df[axis] == base_val]
     comp_df = df[df[axis] == comp_val]
+
+    # 라벨: PDK_ID일 때 pdk_labels 사용 (예: "SF3(900)"), 없으면 기본
+    def _label(val) -> str:
+        if pdk_labels and _to_python(val) in pdk_labels:
+            return pdk_labels[_to_python(val)]
+        return f"{axis}={_to_python(val)}"
+
+    base_label = _label(base_val)
+    comp_label = _label(comp_val)
 
     # 그룹별 평균으로 비교
     if group_keys:
@@ -163,8 +177,8 @@ def _calc_delta(df: pd.DataFrame, axis: str, metrics: list[str]) -> AnalysisResu
         delta = _pct_change(b_mean, c_mean)
         row = {
             "metric": m,
-            f"{axis}={_to_python(base_val)}": round(b_mean, 6),
-            f"{axis}={_to_python(comp_val)}": round(c_mean, 6),
+            base_label: round(b_mean, 6),
+            comp_label: round(c_mean, 6),
             "delta_pct": delta,
         }
         summary.append(row)
@@ -180,6 +194,26 @@ def _calc_delta(df: pd.DataFrame, axis: str, metrics: list[str]) -> AnalysisResu
                 "severity": severity,
             })
 
+    # cross-process PDK 비교일 때 VTH별 breakdown 추가
+    breakdown: list[dict[str, Any]] = []
+    if axis == "PDK_ID" and "VTH" in df.columns:
+        vth_vals = sorted(df["VTH"].unique(), key=_vth_sort_key)
+        for vth in vth_vals:
+            for m in metrics:
+                b_sub = base_df[base_df["VTH"] == vth][m]
+                c_sub = comp_df[comp_df["VTH"] == vth][m]
+                if b_sub.empty or c_sub.empty:
+                    continue
+                b_v = float(b_sub.mean())
+                c_v = float(c_sub.mean())
+                breakdown.append({
+                    "VTH": vth,
+                    "metric": m,
+                    base_label: round(b_v, 6),
+                    comp_label: round(c_v, 6),
+                    "delta_pct": _pct_change(b_v, c_v),
+                })
+
     return AnalysisResult(
         mode="compare",
         summary_table=summary,
@@ -187,8 +221,9 @@ def _calc_delta(df: pd.DataFrame, axis: str, metrics: list[str]) -> AnalysisResu
         chart_data={
             "type": "grouped_bar",
             "axis": axis,
-            "groups": [str(base_val), str(comp_val)],
+            "groups": [base_label, comp_label],
             "metrics": metrics,
+            "breakdown": breakdown,
         },
         raw_for_avg=None,
     )
@@ -350,7 +385,11 @@ def _calc_tradeoff(df: pd.DataFrame, axis: str,
 
 
 def _calc_correlation(df: pd.DataFrame, metrics: list[str]) -> AnalysisResult:
-    """파라미터 간 상관분석"""
+    """파라미터 간 상관분석.
+
+    FREQ_GHZ가 포함되고 ACCEFF_FF/ACREFF_KOHM이 함께 있으면
+    각 parasitic 파라미터의 R² 기여도도 계산 (attribution 분석).
+    """
     metrics = [m for m in metrics if m in df.columns] or _available_metrics(df)
     if len(metrics) < 2:
         metrics = _available_metrics(df)[:4]
@@ -372,11 +411,185 @@ def _calc_correlation(df: pd.DataFrame, metrics: list[str]) -> AnalysisResult:
                     "strength": "강한 양의 상관" if r > 0 else "강한 음의 상관",
                 })
 
+    # Reff/Ceff attribution: FREQ_GHZ를 target으로 각 parasitic R² 계산
+    attribution: list[dict[str, Any]] = []
+    target = "FREQ_GHZ"
+    parasitic_candidates = [m for m in metrics if m in ("ACCEFF_FF", "ACREFF_KOHM") and m != target]
+    if target in df.columns and len(parasitic_candidates) >= 1:
+        y = df[target].dropna()
+        for p in parasitic_candidates:
+            if p not in df.columns:
+                continue
+            xy = df[[target, p]].dropna()
+            if len(xy) < 3:
+                continue
+            r2 = float(xy[target].corr(xy[p]) ** 2)
+            attribution.append({
+                "type": "attribution",
+                "target": target,
+                "predictor": p,
+                "r_squared": round(r2, 4),
+                "description": (
+                    f"{p}이(가) {target} 변동의 {round(r2*100,1)}%를 설명합니다."
+                ),
+            })
+        # R² 높은 순으로 정렬
+        attribution.sort(key=lambda x: -x["r_squared"])
+        findings.extend(attribution)
+
     return AnalysisResult(
         mode="correlation",
         summary_table=summary,
         findings=findings,
-        chart_data={"type": "heatmap", "metrics": metrics},
+        chart_data={"type": "heatmap", "metrics": metrics, "attribution": attribution},
+        raw_for_avg=None,
+    )
+
+
+def _find_sweet_spot(df: pd.DataFrame, entities: dict,
+                     metrics: list[str],
+                     optimization_axes: list[str] | None = None) -> AnalysisResult:
+    """효율 최적점(sweet spot) 탐색.
+
+    단일 축(VDD sweep): 인접 구간별 delta_perf / delta_leakage 효율비를 계산하여
+    효율비가 가장 높은 전압 구간(= 누설 대비 성능 이득이 최대인 지점)을 식별.
+
+    다중 축(VTH × VDD): 모든 조합별 perf/leakage 복합 점수를 계산하여 상위 조합 제시.
+    또한 Pareto frontier(어떤 점보다도 모든 metric에서 나쁘지 않은 점)를 식별.
+    """
+    axes = optimization_axes or ["VDD"]
+    perf_metric = next((m for m in metrics if m in df.columns and m == "FREQ_GHZ"), None)
+    if perf_metric is None:
+        perf_metric = next((m for m in _available_metrics(df)
+                            if m not in ("S_POWER", "IDDQ_NA")), "FREQ_GHZ")
+    leak_metric = next(
+        (m for m in metrics if m in df.columns and m in ("IDDQ_NA", "S_POWER")),
+        "IDDQ_NA" if "IDDQ_NA" in df.columns else "S_POWER"
+    )
+
+    # ── 단일 축 (VDD 또는 VTH) ─────────────────────────
+    if len(axes) == 1:
+        axis = axes[0]
+        if axis not in df.columns:
+            axis = "VDD"
+        axis_vals = sorted(df[axis].unique(), key=(_vth_sort_key if axis == "VTH" else float))
+        summary = []
+        for v in axis_vals:
+            sub = df[df[axis] == v]
+            row: dict[str, Any] = {axis: _to_python(v)}
+            for m in _available_metrics(df):
+                row[m] = round(float(sub[m].mean()), 6)
+            summary.append(row)
+
+        # 인접 구간 효율비: delta_perf / delta_leakage
+        efficiency_rows = []
+        for i in range(1, len(summary)):
+            prev, cur = summary[i - 1], summary[i]
+            d_perf = cur.get(perf_metric, 0) - prev.get(perf_metric, 0)
+            d_leak = cur.get(leak_metric, 0) - prev.get(leak_metric, 0)
+            ratio = round(d_perf / d_leak, 6) if d_leak and d_leak != 0 else None
+            efficiency_rows.append({
+                axis: cur[axis],
+                "delta_perf": round(d_perf, 6),
+                "delta_leakage": round(d_leak, 6),
+                "efficiency_ratio": ratio,
+            })
+
+        # sweet spot = 효율비 최대 구간
+        valid = [r for r in efficiency_rows if r["efficiency_ratio"] is not None]
+        best = max(valid, key=lambda r: r["efficiency_ratio"]) if valid else None
+        findings: list[dict[str, Any]] = []
+        if best:
+            findings.append({
+                "type": "sweet_spot",
+                "axis": axis,
+                "point": best[axis],
+                "efficiency_ratio": best["efficiency_ratio"],
+                "description": (
+                    f"{axis}={best[axis]} 구간에서 {leak_metric} 증가 대비 "
+                    f"{perf_metric} 이득이 가장 큽니다."
+                ),
+            })
+
+        chart_data: dict[str, Any] = {
+            "type": "efficiency_line",
+            "axis": axis,
+            "perf_metric": perf_metric,
+            "leak_metric": leak_metric,
+            "efficiency_rows": efficiency_rows,
+            "metrics": _available_metrics(df),
+        }
+        return AnalysisResult(
+            mode="optimization",
+            summary_table=summary,
+            findings=findings,
+            chart_data=chart_data,
+            raw_for_avg=None,
+        )
+
+    # ── 다중 축 (VTH × VDD) ───────────────────────────
+    group_cols = [ax for ax in axes if ax in df.columns]
+    if not group_cols:
+        group_cols = ["VDD"]
+
+    grp = df.groupby(group_cols)
+    rows_2d: list[dict[str, Any]] = []
+    for key, sub in grp:
+        if not isinstance(key, tuple):
+            key = (key,)
+        row = dict(zip(group_cols, [_to_python(k) for k in key]))
+        p_val = float(sub[perf_metric].mean()) if perf_metric in sub.columns else 0.0
+        l_val = float(sub[leak_metric].mean()) if leak_metric in sub.columns else 1.0
+        row[perf_metric] = round(p_val, 6)
+        row[leak_metric] = round(l_val, 6)
+        row["score"] = round(p_val / l_val, 6) if l_val > 0 else 0.0
+        rows_2d.append(row)
+
+    rows_2d.sort(key=lambda r: -r["score"])
+
+    # Pareto frontier: 어떤 다른 점보다 perf >= and leakage <= 인 점
+    pareto = []
+    for i, r in enumerate(rows_2d):
+        dominated = False
+        for j, other in enumerate(rows_2d):
+            if i == j:
+                continue
+            if (other[perf_metric] >= r[perf_metric]
+                    and other[leak_metric] <= r[leak_metric]
+                    and (other[perf_metric] > r[perf_metric]
+                         or other[leak_metric] < r[leak_metric])):
+                dominated = True
+                break
+        if not dominated:
+            pareto.append(row)
+
+    findings = []
+    for rank, r in enumerate(rows_2d[:3], 1):
+        label = ", ".join(f"{k}={r[k]}" for k in group_cols)
+        findings.append({
+            "type": "sweet_spot",
+            "rank": rank,
+            "conditions": {k: r[k] for k in group_cols},
+            "score": r["score"],
+            "description": (
+                f"[{rank}위] {label}: {perf_metric}={r[perf_metric]}, "
+                f"{leak_metric}={r[leak_metric]}"
+            ),
+        })
+
+    chart_data = {
+        "type": "pareto_scatter",
+        "x_metric": leak_metric,
+        "y_metric": perf_metric,
+        "group_cols": group_cols,
+        "pareto_points": pareto,
+        "metrics": _available_metrics(df),
+    }
+    return AnalysisResult(
+        mode="optimization",
+        summary_table=rows_2d,
+        findings=findings,
+        chart_data=chart_data,
         raw_for_avg=None,
     )
 
@@ -628,6 +841,12 @@ def analyzer(state: PaveAgentState) -> dict:
             hint = entities.get("analysis_hint")
             pdk_count = len(resolution["target_pdks"])
 
+            # cross-process 비교 시 PDK_ID → "공정명(ID)" 라벨 매핑
+            pdk_labels: dict[int, str] = {
+                pdk["pdk_id"]: f"{pdk.get('process', pdk['project_name'])}({pdk['pdk_id']})"
+                for pdk in resolution["target_pdks"]
+            }
+
             if hint == "profile":
                 result = _profile(df, metrics_hint)
             elif hint == "sensitivity":
@@ -642,14 +861,21 @@ def analyzer(state: PaveAgentState) -> dict:
                 result = _calc_correlation(df, metrics_hint)
             elif hint == "interpolation":
                 result = _interpolate(df, entities, metrics_hint)
+            elif hint == "optimization":
+                opt_axes = (resolution.get("resolved_params") or {}).get("optimization_axes")
+                result = _find_sweet_spot(df, entities, metrics_hint, opt_axes)
             elif pdk_count == 2:
-                result = _calc_delta(df, "PDK_ID", metrics_hint)
+                result = _calc_delta(df, "PDK_ID", metrics_hint, pdk_labels=pdk_labels)
             else:
                 compare_axis = _infer_compare_axis(entities)
                 if compare_axis:
                     result = _calc_delta(df, compare_axis, metrics_hint)
                 else:
                     result = _summarize(df, metrics_hint)
+            # Phase 2 확장 지점:
+            # 새 hint 추가 시 위 elif 체인에 새 elif만 추가 (기존 분기 수정 없음)
+            # 예: elif hint == "root_cause": result = _find_root_cause(df, ...)
+            # 예: elif hint == "prediction": result = _predict(df, ...)
 
     except Exception as e:
         logger.error("분석 중 오류: %s", e)

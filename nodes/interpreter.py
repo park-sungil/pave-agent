@@ -52,14 +52,19 @@ def _build_user_message(state: PaveAgentState, domain_knowledge: str) -> str:
     # 원래 질문
     parts.append(f"## 사용자 질문\n{parsed['raw_question']}")
 
-    # PDK 정보
+    # PDK 정보 (cross-process 비교 시 공정명 강조)
     pdk_info = []
     for pdk in resolution["target_pdks"]:
         pdk_info.append(
-            f"- {pdk['project_name']} {pdk['mask']} "
-            f"(PDK_ID={pdk['pdk_id']}, {pdk['process']}, VDD_NOM={pdk['vdd_nominal']}V)"
+            f"- **{pdk['process']}** | {pdk['project_name']} {pdk['mask']} "
+            f"(PDK_ID={pdk['pdk_id']}, VDD_NOM={pdk['vdd_nominal']}V)"
         )
-    parts.append(f"## PDK 버전\n" + "\n".join(pdk_info))
+    comparison_mode = resolution.get("comparison_mode", "single")
+    if comparison_mode in ("pair", "multi"):
+        processes = [pdk["process"] for pdk in resolution["target_pdks"]]
+        if len(set(processes)) > 1:
+            pdk_info.insert(0, f"[cross-process 비교: {' vs '.join(processes)}]")
+    parts.append("## PDK 버전\n" + "\n".join(pdk_info))
 
     # 적용 기본값
     defaults = resolution.get("applied_defaults", {})
@@ -78,6 +83,14 @@ def _build_user_message(state: PaveAgentState, domain_knowledge: str) -> str:
         parts.append(
             f"## VTH ratio 테이블 (기준: {ratio_ref})\n"
             + json.dumps(ratio_table, ensure_ascii=False, indent=2)
+        )
+
+    # cross-process 비교 VTH breakdown
+    breakdown = analysis.get("chart_data", {}).get("breakdown")
+    if breakdown:
+        parts.append(
+            "## VTH별 조건 breakdown\n"
+            + json.dumps(breakdown, ensure_ascii=False, indent=2)
         )
 
     if analysis["findings"]:

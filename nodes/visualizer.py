@@ -18,6 +18,7 @@ DEFAULT_CHART_MAP = {
     "interpolation": "scatter",
     "trend": "line",
     "anomaly": "scatter",
+    "optimization": "efficiency_line",
 }
 
 
@@ -189,12 +190,112 @@ def _build_heatmap(analysis: dict, title: str) -> dict:
     }
 
 
+def _build_efficiency_line(analysis: dict, title: str) -> dict:
+    """Efficiency line chart: X=sweep축, Y=효율비 (delta_perf/delta_leakage)"""
+    chart_data = analysis.get("chart_data", {})
+    axis = chart_data.get("axis", "VDD")
+    efficiency_rows = chart_data.get("efficiency_rows", [])
+    perf_metric = chart_data.get("perf_metric", "FREQ_GHZ")
+    leak_metric = chart_data.get("leak_metric", "IDDQ_NA")
+    summary = analysis.get("summary_table", [])
+
+    x_eff = [str(r[axis]) for r in efficiency_rows]
+    y_eff = [r.get("efficiency_ratio") or 0 for r in efficiency_rows]
+
+    # 원본 perf / leak 값도 보조 trace로 표시
+    x_raw = [str(r[axis]) for r in summary]
+    y_perf = [r.get(perf_metric, 0) for r in summary]
+    y_leak = [r.get(leak_metric, 0) for r in summary]
+
+    return {
+        "data": [
+            {
+                "type": "scatter",
+                "mode": "lines+markers",
+                "name": f"효율비 ({perf_metric}/{leak_metric})",
+                "x": x_eff,
+                "y": y_eff,
+            },
+            {
+                "type": "scatter",
+                "mode": "lines+markers",
+                "name": perf_metric,
+                "x": x_raw,
+                "y": y_perf,
+                "yaxis": "y2",
+            },
+            {
+                "type": "scatter",
+                "mode": "lines+markers",
+                "name": leak_metric,
+                "x": x_raw,
+                "y": y_leak,
+                "yaxis": "y2",
+            },
+        ],
+        "layout": {
+            "title": {"text": title},
+            "xaxis": {"title": axis},
+            "yaxis": {"title": "효율비"},
+            "yaxis2": {"title": "절대값", "overlaying": "y", "side": "right"},
+        },
+    }
+
+
+def _build_pareto_scatter(analysis: dict, title: str) -> dict:
+    """Pareto scatter: X=leakage, Y=performance, Pareto frontier 오버레이"""
+    chart_data = analysis.get("chart_data", {})
+    x_metric = chart_data.get("x_metric", "IDDQ_NA")
+    y_metric = chart_data.get("y_metric", "FREQ_GHZ")
+    group_cols = chart_data.get("group_cols", [])
+    pareto_pts = chart_data.get("pareto_points", [])
+    summary = analysis.get("summary_table", [])
+
+    # 전체 점
+    x_all = [r.get(x_metric, 0) for r in summary]
+    y_all = [r.get(y_metric, 0) for r in summary]
+    labels = [", ".join(f"{c}={r.get(c,'')}" for c in group_cols) for r in summary]
+
+    # Pareto 점 강조
+    x_par = [r.get(x_metric, 0) for r in pareto_pts]
+    y_par = [r.get(y_metric, 0) for r in pareto_pts]
+
+    return {
+        "data": [
+            {
+                "type": "scatter",
+                "mode": "markers",
+                "name": "전체 조합",
+                "x": x_all,
+                "y": y_all,
+                "text": labels,
+                "marker": {"size": 8, "color": "lightblue"},
+            },
+            {
+                "type": "scatter",
+                "mode": "markers+lines",
+                "name": "Pareto Frontier",
+                "x": x_par,
+                "y": y_par,
+                "marker": {"size": 12, "color": "red"},
+            },
+        ],
+        "layout": {
+            "title": {"text": title},
+            "xaxis": {"title": x_metric},
+            "yaxis": {"title": y_metric},
+        },
+    }
+
+
 # chart type → builder 매핑
 CHART_BUILDERS = {
     "grouped_bar": _build_grouped_bar,
     "line": _build_line,
     "scatter": _build_scatter,
     "heatmap": _build_heatmap,
+    "efficiency_line": _build_efficiency_line,
+    "pareto_scatter": _build_pareto_scatter,
 }
 
 

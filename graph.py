@@ -42,6 +42,8 @@ def build_graph(checkpointer=None):
     builder.add_edge(START, "intent_parser")
 
     # 조건부 분기: intent_parser → distributed / list / fallback
+    # Phase 2 확장 시: "deep_analysis" route 값 추가 + 새 노드 연결
+    # 기존 distributed/list/fallback 엣지는 변경하지 않음
     builder.add_conditional_edges(
         "intent_parser",
         _route_after_intent,
@@ -49,6 +51,7 @@ def build_graph(checkpointer=None):
             "distributed": "pdk_resolver",
             "list": "response_formatter",
             "fallback": "fallback_agent",
+            # Phase 2 예시: "deep_analysis": "deep_analyzer",
         },
     )
 
