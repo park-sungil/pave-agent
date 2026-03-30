@@ -10,6 +10,17 @@ from state import PaveAgentState, PDKResolution, ResolvedPDK
 
 logger = logging.getLogger(__name__)
 
+# 노드 크기 별칭 → 가능한 공정명 목록 (DB 실제 PROCESS 값에 맞게 유지보수)
+# 새 공정 추가 시 여기에만 삽입
+NODE_ALIASES: dict[str, list[str]] = {
+    "2nm": ["SF2", "SF2P", "SF2PP"],
+    "3nm": ["SF3"],
+    "4nm": ["SF4", "LN04LPE", "LN04LPP"],
+    "5nm": ["SF5"],
+    "n2": ["SF2", "SF2P", "SF2PP"],
+    "n3": ["SF3"],
+}
+
 # --- SQL 템플릿 ---
 
 SQL_GOLDEN_OPTIONS_BY_PROCESS = """
@@ -51,6 +62,17 @@ SQL_AVAILABLE_VALUES = """
     FROM antsdb.PAVE_PPA_DATA_VIEW d
     WHERE d.PDK_ID = {pdk_id}
     FETCH FIRST 50 ROWS ONLY
+"""
+
+SQL_GOLDEN_OPTIONS_BY_PROCESS_LIKE = """
+    SELECT PROCESS, PROJECT, PROJECT_NAME, MASK, DK_GDS, HSPICE, LVS, PEX
+    FROM antsdb.PAVE_PDK_VERSION_VIEW
+    WHERE IS_GOLDEN = 1 AND (
+        UPPER(PROCESS) LIKE UPPER('%{keyword}%')
+        OR UPPER(PROJECT_NAME) LIKE UPPER('%{keyword}%')
+    ){mask_filter}
+    ORDER BY PROJECT, MASK, DK_GDS
+    FETCH FIRST 20 ROWS ONLY
 """
 
 # 버전 선택 테이블 컬럼 순서
@@ -105,8 +127,11 @@ def _query_golden_options(process: str | None, project: str | None,
                            mask_hint: str | None = None) -> list[dict]:
     """IS_GOLDEN=1 레코드를 조회하여 선택 가능한 버전 목록 반환.
 
-    process 입력 시 결과가 없으면 project_name으로 재시도
-    (사용자가 "Vanguard"처럼 project_name을 입력하는 경우 대비).
+    fallback 순서:
+    1. 정확한 process 매치
+    2. process 문자열이 NODE_ALIASES 키면 후보 공정들 순서대로 조회
+    3. project_name으로 재시도 (사용자가 "Vanguard" 등 입력하는 경우)
+    4. LIKE 부분 매치 (위 모두 실패 시 마지막 폴백)
     """
     mask_filter = f" AND MASK = '{mask_hint}'" if mask_hint else ""
 
@@ -117,12 +142,32 @@ def _query_golden_options(process: str | None, project: str | None,
         return execute_query(SQL_GOLDEN_OPTIONS_BY_PROJECT_NAME.format(
             name=project_name, mask_filter=mask_filter))
     if process:
+        # NODE_ALIASES 확인 (예: "2nm" → ["SF2","SF2P","SF2PP"])
+        normalized = process.lower().strip()
+        if normalized in NODE_ALIASES:
+            all_rows: list[dict] = []
+            for candidate in NODE_ALIASES[normalized]:
+                rows = execute_query(SQL_GOLDEN_OPTIONS_BY_PROCESS.format(
+                    process=candidate, mask_filter=mask_filter))
+                all_rows.extend(rows)
+            if all_rows:
+                return all_rows
+
+        # 정확한 process 매치
         rows = execute_query(SQL_GOLDEN_OPTIONS_BY_PROCESS.format(
             process=process, mask_filter=mask_filter))
-        if not rows:
-            # process 문자열이 사실 project_name일 수 있음
-            rows = execute_query(SQL_GOLDEN_OPTIONS_BY_PROJECT_NAME.format(
-                name=process, mask_filter=mask_filter))
+        if rows:
+            return rows
+
+        # project_name으로 재시도
+        rows = execute_query(SQL_GOLDEN_OPTIONS_BY_PROJECT_NAME.format(
+            name=process, mask_filter=mask_filter))
+        if rows:
+            return rows
+
+        # LIKE 부분 매치 (최후 폴백)
+        rows = execute_query(SQL_GOLDEN_OPTIONS_BY_PROCESS_LIKE.format(
+            keyword=process, mask_filter=mask_filter))
         return rows
     return []
 
@@ -215,15 +260,22 @@ def _query_available_values(pdk_id: int, col: str) -> list:
     return sorted([r[col] for r in rows])
 
 
-def _build_applied_defaults(entities: dict, sensitivity_axis: str | None = None) -> dict[str, str]:
+def _build_applied_defaults(
+    entities: dict,
+    sensitivity_axis: str | None = None,
+    optimization_axes: list[str] | None = None,
+) -> dict[str, str]:
     """적용된 기본값 목록 생성"""
+    opt_axes = set(optimization_axes or [])
     defaults = {}
     if not entities.get("corners"):
         defaults["corner"] = "전체" if sensitivity_axis == "corner" else "TT"
     if not entities.get("temps"):
         defaults["temp"] = "전체" if sensitivity_axis == "temp" else "25"
     if not entities.get("vdds"):
-        defaults["vdd"] = "전체" if sensitivity_axis == "vdd" else "nominal"
+        defaults["vdd"] = "전체" if (sensitivity_axis == "vdd" or "VDD" in opt_axes) else "nominal"
+    if not entities.get("vths") and "VTH" in opt_axes:
+        defaults["vth"] = "전체"
     if not entities.get("cells"):
         defaults["cell"] = "AVG(INV/ND2/NR2)"
     if not entities.get("drive_strengths"):
@@ -343,6 +395,7 @@ def pdk_resolver(state: PaveAgentState) -> dict:
     hint = entities.get("analysis_hint")
     resolved_params: dict[str, Any] = {}
     sensitivity_axis = None
+    optimization_axes: list[str] = []
 
     if hint == "sensitivity":
         entities_with_q = dict(entities)
@@ -360,11 +413,27 @@ def pdk_resolver(state: PaveAgentState) -> dict:
             resolved_params["sensitivity_entity_key"] = entity_key
             resolved_params["available_values"] = available_per_pdk
 
+    elif hint == "optimization":
+        # optimization: 어떤 축을 sweep할지 추론 (VDD, VTH, 또는 둘 다)
+        raw_q = parsed.get("raw_question", "").lower()
+        # 전압 구간 탐색 키워드
+        if any(w in raw_q for w in ["전압", "vdd", "voltage", "volt"]):
+            optimization_axes.append("VDD")
+        # flavor / vth 조합 탐색 키워드
+        if any(w in raw_q for w in ["flavor", "vth", "threshold", "조합", "flavor"]):
+            optimization_axes.append("VTH")
+        # 아무 축도 명시 안 했으면 VDD 기본 (sweet spot은 주로 전압 sweep)
+        if not optimization_axes:
+            optimization_axes.append("VDD")
+        resolved_params["optimization_axes"] = optimization_axes
+
     return {
         "pdk_resolution": PDKResolution(
             target_pdks=target_pdks,
             comparison_mode=mode,
             resolved_params=resolved_params,
-            applied_defaults=_build_applied_defaults(entities, sensitivity_axis),
+            applied_defaults=_build_applied_defaults(
+                entities, sensitivity_axis, optimization_axes
+            ),
         ),
     }
