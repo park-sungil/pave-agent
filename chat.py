@@ -264,16 +264,19 @@ def _print_data_table(dt: dict) -> None:
     console.print(table)
 
 
-def _stream_run(graph, state_or_cmd, config, debug: bool, verbose: bool) -> None:
-    """graph.stream()으로 실행. debug=True 시 노드 진행상황 출력"""
+def _stream_run(graph, state_or_cmd, config, debug: bool, verbose: bool) -> list[str]:
+    """graph.stream()으로 실행. 실행된 노드 이름 목록 반환."""
     t0 = time.monotonic()
     prev_t = t0
+    executed: list[str] = []
     for chunk in graph.stream(state_or_cmd, config, stream_mode="updates"):
         now = time.monotonic()
         elapsed = now - prev_t
         prev_t = now
+        executed.extend(chunk.keys())
         if debug:
             _print_node_debug(chunk, verbose, elapsed=elapsed)
+    return executed
 
 
 _input_history = InMemoryHistory()
@@ -336,7 +339,8 @@ def main():
         }
 
         try:
-            _stream_run(graph, state, config, debug, verbose)
+            executed_nodes: list[str] = []
+            executed_nodes += _stream_run(graph, state, config, debug, verbose)
 
             # interrupt 처리 루프
             while True:
@@ -348,13 +352,12 @@ def main():
                     if task.interrupts:
                         for intr in task.interrupts:
                             val = intr.value
-                            q = val.get("question", str(val))
-                            options = val.get("options", [])
-                            table_headers = val.get("table_headers")
-                            table_rows_data = val.get("table_rows", [])
+                            q = val.get("question", str(val)) if isinstance(val, dict) else str(val)
+                            options = val.get("options", []) if isinstance(val, dict) else []
+                            table_headers = val.get("table_headers") if isinstance(val, dict) else None
+                            table_rows_data = val.get("table_rows", []) if isinstance(val, dict) else []
                             console.print(Panel(q, title="[warn]질문[/warn]", border_style="yellow"))
                             if table_headers:
-                                # 구조화 테이블 (pdk_resolver 버전 선택용)
                                 tbl = Table(box=box.SIMPLE_HEAVY, show_header=True,
                                             header_style="bold white", show_lines=False)
                                 tbl.add_column("#", style="bold white", width=3, justify="right")
@@ -364,7 +367,6 @@ def main():
                                     tbl.add_row(str(i), *[str(c) for c in row])
                                 console.print(tbl)
                             elif options:
-                                # 단순 번호 목록 fallback
                                 tbl = Table(box=box.SIMPLE_HEAVY, show_header=True,
                                             header_style="bold white", show_lines=False)
                                 tbl.add_column("#", style="bold white", width=3, justify="right")
@@ -382,7 +384,7 @@ def main():
                 if not answer:
                     break
 
-                _stream_run(graph, Command(resume=answer), config, debug, verbose)
+                executed_nodes += _stream_run(graph, Command(resume=answer), config, debug, verbose)
 
             # 최종 결과 출력
             final_snapshot = graph.get_state(config)
@@ -415,6 +417,13 @@ def main():
                     console.print(f"[info]차트 {len(resp['charts'])}개 생성됨[/info]")
             else:
                 console.print("[error]응답 없음 — response_formatter가 호출되지 않았습니다.[/error]")
+                # 항상 진단 정보 출력 (debug 불필요)
+                console.print(f"[key]실행된 노드:[/key] [val]{executed_nodes or '없음'}[/val]")
+                # LangGraph 태스크 오류 확인
+                for task in final_snapshot.tasks:
+                    err = getattr(task, "error", None)
+                    if err:
+                        console.print(f"[error]태스크 오류 [{task.name}]: {err}[/error]")
                 if debug:
                     console.print("[warn]최종 state (None 제외):[/warn]")
                     for k, v in final.items():

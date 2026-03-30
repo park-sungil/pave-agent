@@ -4,7 +4,7 @@ import logging
 
 from langgraph.graph import StateGraph, START, END
 
-from state import PaveAgentState
+from state import PaveAgentState, FinalResponse
 from nodes.intent_parser import intent_parser
 from nodes.pdk_resolver import pdk_resolver
 from nodes.query_builder import query_builder
@@ -32,6 +32,26 @@ def _safe_node(fn):
                 raise
             logger.exception("노드 [%s] 오류 발생", fn.__name__)
             return {"error": f"[{fn.__name__}] {type(e).__name__}: {e}"}
+    wrapper.__name__ = fn.__name__
+    return wrapper
+
+
+def _safe_response_formatter(fn):
+    """response_formatter 전용 래퍼: 절대 실패하지 않음.
+
+    response_formatter가 크래시해도 final_response를 항상 설정.
+    """
+    def wrapper(state):
+        try:
+            return fn(state)
+        except Exception as e:
+            logger.exception("response_formatter 오류 발생")
+            return {
+                "final_response": FinalResponse(
+                    text=f"응답 포맷 오류: [{type(e).__name__}] {e}",
+                    data_tables=[], charts=[], applied_defaults={}, metadata={},
+                )
+            }
     wrapper.__name__ = fn.__name__
     return wrapper
 
@@ -72,7 +92,7 @@ def build_graph(checkpointer=None):
     builder.add_node("analyzer",           _safe_node(analyzer))
     builder.add_node("interpreter",        _safe_node(interpreter))
     builder.add_node("visualizer",         _safe_node(visualizer))
-    builder.add_node("response_formatter", response_formatter)   # 에러 핸들러이므로 래핑 안 함
+    builder.add_node("response_formatter", _safe_response_formatter(response_formatter))
     builder.add_node("fallback_agent",     _safe_node(fallback_agent))
 
     # 엣지: START → intent_parser
