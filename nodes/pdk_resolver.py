@@ -14,42 +14,7 @@ from state import PaveAgentState, PDKResolution, ResolvedPDK
 
 logger = logging.getLogger(__name__)
 
-# --- SQL 템플릿 ---
-
-SQL_GOLDEN_OPTIONS_BY_PROCESS = """
-    SELECT PROCESS, PROJECT, PROJECT_NAME, MASK, DK_GDS, HSPICE, LVS, PEX
-    FROM antsdb.PAVE_PDK_VERSION_VIEW
-    WHERE IS_GOLDEN = 1 AND PROCESS = '{process}'{mask_filter}
-    ORDER BY PROJECT, MASK, DK_GDS
-    FETCH FIRST 20 ROWS ONLY
-"""
-
-SQL_GOLDEN_OPTIONS_BY_PROJECT = """
-    SELECT PROCESS, PROJECT, PROJECT_NAME, MASK, DK_GDS, HSPICE, LVS, PEX
-    FROM antsdb.PAVE_PDK_VERSION_VIEW
-    WHERE IS_GOLDEN = 1 AND PROJECT = '{project}'{mask_filter}
-    ORDER BY MASK, DK_GDS
-    FETCH FIRST 20 ROWS ONLY
-"""
-
-SQL_GOLDEN_OPTIONS_BY_PROJECT_NAME = """
-    SELECT PROCESS, PROJECT, PROJECT_NAME, MASK, DK_GDS, HSPICE, LVS, PEX
-    FROM antsdb.PAVE_PDK_VERSION_VIEW
-    WHERE IS_GOLDEN = 1 AND PROJECT_NAME = '{name}'{mask_filter}
-    ORDER BY MASK, DK_GDS
-    FETCH FIRST 20 ROWS ONLY
-"""
-
-SQL_LATEST_PDK = """
-    SELECT PDK_ID, PROJECT, PROJECT_NAME, PROCESS, MASK, DK_GDS,
-           HSPICE, LVS, PEX, IS_GOLDEN, VDD_NOMINAL
-    FROM antsdb.PAVE_PDK_VERSION_VIEW
-    WHERE PROJECT = '{project}' AND MASK = '{mask}' AND DK_GDS = '{dk_gds}'
-      AND HSPICE = '{hspice}' AND LVS = '{lvs}' AND PEX = '{pex}'
-    ORDER BY CREATED_AT DESC
-    FETCH FIRST 1 ROW ONLY
-"""
-
+# sensitivity 분석 시 PDK별 가용 파라미터 값 조회 (유일한 SQL)
 SQL_AVAILABLE_VALUES = """
     SELECT DISTINCT d.{col}
     FROM antsdb.PAVE_PPA_DATA_VIEW d
@@ -182,7 +147,6 @@ def _llm_select_from_catalog(question: str, intent: str,
             elif c.get("project_name") and c["project_name"] in valid_project_names:
                 validated.append(c)
             elif c.get("project"):
-                # project 코드는 available_pdks에 없으므로 그대로 허용 (DB 조회에서 확인)
                 validated.append(c)
 
         return {"candidates": validated, "message": result.get("message", "")}
@@ -192,87 +156,83 @@ def _llm_select_from_catalog(question: str, intent: str,
         return {"candidates": [], "message": ""}
 
 
-def _build_catalog_interrupt(available_pdks: list[dict]) -> tuple[list[list[str]], list[str]]:
-    """distinct PROCESS 순서로 번호 선택 테이블 생성.
+def _filter_pdks(available_pdks: list[dict], cand: dict,
+                 mask_hint: str | None = None) -> list[dict]:
+    """candidate 조건으로 available_pdks 인메모리 필터링.
 
-    반환: (table_rows, options)
-    table_rows: [[번호, PROCESS, PROJECT_NAME 예시], ...]
+    IS_GOLDEN=1 항목이 있으면 우선 반환.
     """
-    grouped: dict[str, list[str]] = defaultdict(list)
-    for pdk in available_pdks:
-        process = pdk.get("PROCESS") or ""
-        pname = pdk.get("PROJECT_NAME") or ""
-        if process and pname and pname not in grouped[process]:
-            grouped[process].append(pname)
-
-    table_rows = []
-    for i, process in enumerate(sorted(grouped.keys()), start=1):
-        examples = ", ".join(grouped[process][:3])
-        table_rows.append([str(i), process, examples])
-
-    options = [str(i) for i in range(1, len(table_rows) + 1)]
-    return table_rows, options
+    result = available_pdks
+    if cand.get("process"):
+        result = [p for p in result if p.get("PROCESS") == cand["process"]]
+    if cand.get("project"):
+        result = [p for p in result if p.get("PROJECT") == cand["project"]]
+    if cand.get("project_name"):
+        result = [p for p in result if p.get("PROJECT_NAME") == cand["project_name"]]
+    if mask_hint:
+        result = [p for p in result if p.get("MASK") == mask_hint]
+    golden = [p for p in result if p.get("IS_GOLDEN") == 1]
+    return golden if golden else result
 
 
-def _query_golden_options(process: str | None, project: str | None,
-                           project_name: str | None,
-                           mask_hint: str | None = None) -> list[dict]:
-    """IS_GOLDEN=1 레코드를 조회하여 선택 가능한 버전 목록 반환."""
-    mask_filter = f" AND MASK = '{mask_hint}'" if mask_hint else ""
-
-    if project:
-        return execute_query(SQL_GOLDEN_OPTIONS_BY_PROJECT.format(
-            project=project, mask_filter=mask_filter))
-    if project_name:
-        return execute_query(SQL_GOLDEN_OPTIONS_BY_PROJECT_NAME.format(
-            name=project_name, mask_filter=mask_filter))
-    if process:
-        rows = execute_query(SQL_GOLDEN_OPTIONS_BY_PROCESS.format(
-            process=process, mask_filter=mask_filter))
-        if rows:
-            return rows
-        # project_name으로 재시도 (사용자가 "Thetis" 등을 process 필드에 넣은 경우)
-        rows = execute_query(SQL_GOLDEN_OPTIONS_BY_PROJECT_NAME.format(
-            name=process, mask_filter=mask_filter))
-        return rows
-    return []
+def _resolve_candidates(candidates: list[dict], available_pdks: list[dict],
+                         mask_hint: str | None) -> list[dict]:
+    """LLM candidates → available_pdks 필터링 → 버전 선택 → 확정 엔트리 목록"""
+    resolved = []
+    for cand in candidates[:5]:
+        matches = _filter_pdks(available_pdks, cand, mask_hint)
+        if not matches:
+            continue
+        if len(matches) == 1:
+            resolved.append(matches[0])
+        else:
+            label = cand.get("process") or cand.get("project_name") or "?"
+            chosen = _pick_from_options(matches, f"분석할 버전을 선택해주세요. ({label})")
+            resolved.append(chosen)
+    return resolved
 
 
-def _pick_from_options(rows: list[dict], question: str) -> dict:
-    """여러 golden 옵션 중 사용자 선택. 전체 컬럼 테이블로 표시."""
-    table_rows = [[str(r.get(h, "")) for h in _VERSION_TABLE_HEADERS] for r in rows]
-    options = [str(i) for i in range(1, len(rows) + 1)]
+def _pick_from_options(entries: list[dict], question: str) -> dict:
+    """여러 옵션 중 사용자 선택. 전체 컬럼 테이블로 표시."""
+    table_rows = [[str(e.get(h, "")) for h in _VERSION_TABLE_HEADERS] for e in entries]
+    options = [str(i) for i in range(1, len(entries) + 1)]
     choice = _ask_user(question, options,
                        table_headers=_VERSION_TABLE_HEADERS,
                        table_rows=table_rows)
-    return rows[_parse_choice(choice, len(rows))]
+    return entries[_parse_choice(choice, len(entries))]
 
 
-def _row_to_resolved_pdk(row: dict) -> ResolvedPDK:
-    """DB 행 → ResolvedPDK 변환"""
+def _entry_to_resolved_pdk(entry: dict) -> ResolvedPDK:
+    """pdk_cache 항목 → ResolvedPDK 변환 (DB 쿼리 없음)"""
     return ResolvedPDK(
-        pdk_id=row["PDK_ID"],
-        process=row.get("PROCESS", ""),
-        project=row["PROJECT"],
-        project_name=row["PROJECT_NAME"],
-        mask=row["MASK"],
-        dk_gds=row["DK_GDS"],
-        is_golden=row.get("IS_GOLDEN", 0),
-        hspice=row.get("HSPICE", ""),
-        lvs=row.get("LVS", ""),
-        pex=row.get("PEX", ""),
-        vdd_nominal=row.get("VDD_NOMINAL", 0.0),
+        pdk_id=entry["PDK_ID"],
+        process=entry.get("PROCESS", ""),
+        project=entry["PROJECT"],
+        project_name=entry["PROJECT_NAME"],
+        mask=entry["MASK"],
+        dk_gds=entry["DK_GDS"],
+        is_golden=entry.get("IS_GOLDEN", 0),
+        hspice=entry.get("HSPICE", ""),
+        lvs=entry.get("LVS", ""),
+        pex=entry.get("PEX", ""),
+        vdd_nominal=entry.get("VDD_NOMINAL", 0.0),
     )
 
 
-def _get_latest_pdk(project: str, mask: str, dk_gds: str,
-                    hspice: str, lvs: str, pex: str) -> dict | None:
-    """project+mask+dk_gds+hspice+lvs+pex 조합에서 최신 pdk_id 조회"""
-    rows = execute_query(SQL_LATEST_PDK.format(
-        project=project, mask=mask, dk_gds=dk_gds,
-        hspice=hspice, lvs=lvs, pex=pex,
-    ))
-    return rows[0] if rows else None
+def _ask_user_catalog(msg: str, available_pdks: list[dict]) -> str:
+    """PROCESS/PROJECT_NAME 예시를 인라인으로 보여주며 사용자에게 질문."""
+    examples: list[str] = []
+    seen: set[str] = set()
+    for p in available_pdks:
+        val = p.get("PROCESS") or p.get("PROJECT_NAME") or ""
+        if val and val not in seen:
+            examples.append(val)
+            seen.add(val)
+        if len(examples) >= 5:
+            break
+    hint = f"(예: {', '.join(examples)}, ...)" if examples else ""
+    question = f"{msg} {hint}".strip()
+    return _ask_user(question, [])
 
 
 # ──────────────────────────────────────────────
@@ -330,82 +290,47 @@ def _build_applied_defaults(
 # ──────────────────────────────────────────────
 
 def pdk_resolver(state: PaveAgentState) -> dict:
-    """PDK 버전 특정 (LLM-light 카탈로그 선택 + ask_user interrupt)"""
+    """PDK 버전 특정 (LLM-light 루프 + interrupt, SQL 없음)"""
     parsed = state["parsed_intent"]
     entities = parsed["entities"]
     available_pdks = state.get("available_pdks") or []
     masks = entities.get("masks") or []
     mask_hint: str | None = masks[0] if len(masks) == 1 else None
 
-    # Step 1: LLM이 카탈로그에서 공정 선택
-    result = _llm_select_from_catalog(parsed["raw_question"], parsed["intent"], available_pdks)
-    candidates = result.get("candidates") or []
+    question = parsed["raw_question"]
 
-    # Step 2: LLM 판단 불가 → 사용자에게 카탈로그 표시
-    if not candidates:
+    # PDK 확정될 때까지 루프 (interrupt/resume으로 사용자와 대화)
+    while True:
+        result = _llm_select_from_catalog(question, parsed["intent"], available_pdks)
+        candidates = result.get("candidates") or []
+        target_entries = _resolve_candidates(candidates, available_pdks, mask_hint)
+        if target_entries:
+            break
         msg = result.get("message") or "분석할 공정을 선택해주세요."
-        table_rows, options = _build_catalog_interrupt(available_pdks)
-        answer = _ask_user(
-            msg, options,
-            table_headers=["번호", "PROCESS", "PROJECT_NAME 예시"],
-            table_rows=table_rows,
-        )
-        idx = _parse_choice(answer, len(table_rows))
-        candidates = [{"process": table_rows[idx][1]}]
+        question = _ask_user_catalog(msg, available_pdks)
 
-    # Step 3: DB 조회 + 버전 선택
-    target_pdks: list[ResolvedPDK] = []
-    for cand in candidates[:5]:
-        rows = _query_golden_options(
-            process=cand.get("process"),
-            project=cand.get("project"),
-            project_name=cand.get("project_name"),
-            mask_hint=mask_hint,
-        )
-        if not rows:
-            continue
-        label = cand.get("process") or cand.get("project_name") or "?"
-        r = rows[0] if len(rows) == 1 else _pick_from_options(
-            rows, f"분석할 버전을 선택해주세요. ({label})"
-        )
-        pdk_row = _get_latest_pdk(
-            r["PROJECT"], r["MASK"], r["DK_GDS"], r["HSPICE"], r["LVS"], r["PEX"]
-        )
-        if pdk_row:
-            target_pdks.append(_row_to_resolved_pdk(pdk_row))
+    target_pdks = [_entry_to_resolved_pdk(e) for e in target_entries]
 
-    # comparison_version: 같은 project의 다른 버전 목록을 테이블로 제시
+    # comparison_version: 같은 project의 다른 버전 목록 제시
     missing_params = parsed.get("missing_params") or []
     if "comparison_version" in missing_params and len(target_pdks) == 1:
         primary = target_pdks[0]
-        all_options = _query_golden_options(None, primary["project"], None)
-        other_options = [
-            r for r in all_options
-            if not (r["MASK"] == primary["mask"] and r["DK_GDS"] == primary["dk_gds"])
+        others = [
+            p for p in available_pdks
+            if p.get("PROJECT") == primary["project"]
+            and not (p.get("MASK") == primary["mask"] and p.get("DK_GDS") == primary["dk_gds"])
+            and p.get("IS_GOLDEN") == 1
         ]
-        if other_options:
-            r = _pick_from_options(other_options, "비교할 이전 버전을 선택해주세요.")
-            pdk_row = _get_latest_pdk(
-                r["PROJECT"], r["MASK"], r["DK_GDS"], r["HSPICE"], r["LVS"], r["PEX"]
-            )
-            if pdk_row:
-                target_pdks.append(_row_to_resolved_pdk(pdk_row))
+        if others:
+            chosen = others[0] if len(others) == 1 else _pick_from_options(
+                others, "비교할 이전 버전을 선택해주세요.")
+            target_pdks.append(_entry_to_resolved_pdk(chosen))
         else:
-            choice = _ask_user("비교할 이전 버전을 입력해주세요. (예: EVT0)", [])
-            rows = _query_golden_options(None, primary["project"], None,
-                                         mask_hint=choice.strip())
-            if rows:
-                r = rows[0] if len(rows) == 1 else _pick_from_options(
-                    rows, "비교할 버전을 선택해주세요.")
-                pdk_row = _get_latest_pdk(
-                    r["PROJECT"], r["MASK"], r["DK_GDS"], r["HSPICE"], r["LVS"], r["PEX"]
-                )
-                if pdk_row:
-                    target_pdks.append(_row_to_resolved_pdk(pdk_row))
-
-    # Step 4: 진짜 시스템 오류 (DB에 데이터 없음)
-    if not target_pdks:
-        return {"error": "선택한 공정의 PDK 데이터가 DB에 없습니다."}
+            question = _ask_user("비교할 이전 버전을 입력해주세요. (예: EVT0)", [])
+            cand = {"process": primary["process"]}
+            matches = _filter_pdks(available_pdks, cand, mask_hint=question.strip())
+            if matches:
+                target_pdks.append(_entry_to_resolved_pdk(matches[0]))
 
     mode = "single" if len(target_pdks) == 1 else "pair" if len(target_pdks) == 2 else "multi"
 
