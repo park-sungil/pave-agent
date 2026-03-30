@@ -299,6 +299,10 @@ def pdk_resolver(state: PaveAgentState) -> dict:
     parsed = state["parsed_intent"]
     entities = parsed["entities"]
     available_pdks = state.get("available_pdks") or []
+
+    if not available_pdks:
+        return {"error": "PDK 목록을 불러올 수 없습니다. DB 연결을 확인해주세요."}
+
     masks = entities.get("masks") or []
     mask_hint: str | None = masks[0] if len(masks) == 1 else None
 

@@ -385,8 +385,18 @@ def main():
                 _stream_run(graph, Command(resume=answer), config, debug, verbose)
 
             # 최종 결과 출력
-            final = graph.get_state(config).values
+            final_snapshot = graph.get_state(config)
+            final = final_snapshot.values
             console.rule()
+
+            # 그래프가 interrupt 상태로 중단됨 (사용자가 입력 없이 종료)
+            if final_snapshot.next:
+                console.print("[warn]입력이 없어 취소되었습니다.[/warn]")
+                if debug:
+                    console.print(f"[key]중단 위치:[/key] [val]{final_snapshot.next}[/val]")
+                console.rule()
+                continue
+
             if final.get("error"):
                 console.print(Panel(final["error"], title="[error]ERROR[/error]", border_style="red"))
             elif final.get("final_response"):
@@ -404,13 +414,12 @@ def main():
                 if resp.get("charts"):
                     console.print(f"[info]차트 {len(resp['charts'])}개 생성됨[/info]")
             else:
-                console.print("[warn]응답 없음[/warn]")
+                console.print("[error]응답 없음 — response_formatter가 호출되지 않았습니다.[/error]")
                 if debug:
-                    # debug 모드: 최종 state 덤프
-                    console.print("[warn]최종 state 키:[/warn]")
+                    console.print("[warn]최종 state (None 제외):[/warn]")
                     for k, v in final.items():
                         if v is not None:
-                            console.print(f"  [key]{k}:[/key] [val]{str(v)[:120]}[/val]")
+                            console.print(f"  [key]{k}:[/key] [val]{str(v)[:200]}[/val]")
             console.rule()
 
             history.append({"question": question, "summary": "..."})

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from langgraph.graph import StateGraph, START, END
 
 from state import PaveAgentState
@@ -12,6 +14,26 @@ from nodes.interpreter import interpreter
 from nodes.visualizer import visualizer
 from nodes.response_formatter import response_formatter
 from nodes.fallback_agent import fallback_agent
+
+logger = logging.getLogger(__name__)
+
+
+def _safe_node(fn):
+    """노드 함수 래퍼: 예외 → {"error": ...} 변환.
+
+    LangGraph interrupt 예외는 재발생시켜 interrupt 메커니즘 유지.
+    """
+    def wrapper(state):
+        try:
+            return fn(state)
+        except Exception as e:
+            # LangGraph interrupt는 예외 타입 이름에 "interrupt" 포함
+            if "interrupt" in type(e).__name__.lower():
+                raise
+            logger.exception("노드 [%s] 오류 발생", fn.__name__)
+            return {"error": f"[{fn.__name__}] {type(e).__name__}: {e}"}
+    wrapper.__name__ = fn.__name__
+    return wrapper
 
 
 def _route_after_intent(state: PaveAgentState) -> str:
@@ -42,16 +64,16 @@ def build_graph(checkpointer=None):
     """
     builder = StateGraph(PaveAgentState)
 
-    # 노드 등록
-    builder.add_node("intent_parser", intent_parser)
-    builder.add_node("pdk_resolver", pdk_resolver)
-    builder.add_node("query_builder", query_builder)
-    builder.add_node("data_executor", data_executor)
-    builder.add_node("analyzer", analyzer)
-    builder.add_node("interpreter", interpreter)
-    builder.add_node("visualizer", visualizer)
-    builder.add_node("response_formatter", response_formatter)
-    builder.add_node("fallback_agent", fallback_agent)
+    # 노드 등록 (_safe_node로 감싸 예외 → error 상태 변환)
+    builder.add_node("intent_parser",      _safe_node(intent_parser))
+    builder.add_node("pdk_resolver",       _safe_node(pdk_resolver))
+    builder.add_node("query_builder",      _safe_node(query_builder))
+    builder.add_node("data_executor",      _safe_node(data_executor))
+    builder.add_node("analyzer",           _safe_node(analyzer))
+    builder.add_node("interpreter",        _safe_node(interpreter))
+    builder.add_node("visualizer",         _safe_node(visualizer))
+    builder.add_node("response_formatter", response_formatter)   # 에러 핸들러이므로 래핑 안 함
+    builder.add_node("fallback_agent",     _safe_node(fallback_agent))
 
     # 엣지: START → intent_parser
     builder.add_edge(START, "intent_parser")
